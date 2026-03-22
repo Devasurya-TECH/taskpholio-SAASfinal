@@ -32,16 +32,36 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isLoading) return;
-    if (role === "Member" && !team) {
-      return toast.error("Please select a team");
-    }
-    
+
     try {
-      await register(name, email, password, role, role === "Member" ? team : undefined);
+      const API_URL = "https://taskpholio-saas-1.onrender.com";
+
+      const res = await fetch(`${API_URL}/api/v1/auth/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+          role,
+          team
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.message || "Registration failed");
+        return;
+      }
+
       toast.success("Account created successfully!");
-      router.push("/dashboard");
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Registration failed.");
+      router.push("/login");
+    } catch (error) {
+      console.error(error);
+      alert("Registration failed");
     }
   };
 

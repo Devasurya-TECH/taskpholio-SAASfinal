@@ -22,18 +22,23 @@ const loginSchema = Joi.object({
   password: Joi.string().required(),
 });
 
-const register = async (req, res, next) => {
+const bcrypt = require("bcryptjs");
+
+const register = async (req, res) => {
   try {
+    console.log("REQ BODY:", req.body);
     const { name, email, password, role, team } = req.body;
 
     if (!name || !email || !password) {
-      return res.status(400).json({ message: "Required fields missing" });
+      return res.status(400).json({ message: "Missing required fields" });
     }
 
-    const existing = await User.findOne({ email });
-    if (existing) return res.status(409).json({ message: 'Email already registered.' });
+    const existingUser = await User.findOne({ email });
 
-    const bcrypt = require('bcryptjs');
+    if (existingUser) {
+      return res.status(400).json({ message: "User already exists" });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await User.create({
@@ -44,30 +49,16 @@ const register = async (req, res, next) => {
       team: team || null
     });
 
-    // Ensure CEO/CTO do not have teams assigned (safety cleanup)
-    if (user.role !== 'Member' && user.team) {
-      user.team = undefined;
-      await user.save();
-    }
-
-    // Sync team members array
-    if (user.team) {
-      await Team.findByIdAndUpdate(user.team, { $addToSet: { members: user._id } });
-    }
-
-    await logAudit('CREATE', 'User', user._id, user._id, { newState: user.toObject() });
-
     return res.status(201).json({
       success: true,
-      user,
-      data: {
-        user,
-        token: generateToken(user._id)
-      }
+      user
     });
-  } catch (err) {
-    console.error("REGISTER ERROR:", err);
-    return res.status(500).json({ message: err.message });
+
+  } catch (error) {
+    console.error("REGISTER ERROR:", error);
+    return res.status(500).json({
+      message: error.message
+    });
   }
 };
 

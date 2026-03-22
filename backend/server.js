@@ -62,8 +62,9 @@ if (process.env.SENTRY_DSN) {
 // Middleware
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(cors({
-  origin: (origin, callback) => callback(null, true),
-  credentials: true,
+  origin: "*",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
 }));
 
 // Request logging
