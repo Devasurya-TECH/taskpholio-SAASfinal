@@ -34,9 +34,7 @@ export default function RegisterPage() {
     if (isLoading) return;
 
     try {
-      const API_URL = "https://taskpholio-saas-1.onrender.com";
-
-      const res = await fetch(`${API_URL}/api/v1/auth/register`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/register`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
