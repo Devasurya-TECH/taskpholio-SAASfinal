@@ -248,10 +248,12 @@ function TeamDetailsModal({ team, isOpen, onClose }: any) {
         </div>
 
         {/* Action Bar */}
-        <div className="p-8 bg-black/40 border-t border-white/5 flex justify-end gap-4">
+        {isAdmin && (
+          <div className="p-8 bg-black/40 border-t border-white/5 flex justify-end gap-4">
             <button className="px-8 py-3 rounded-2xl bg-white/5 hover:bg-white/10 font-black text-[10px] uppercase tracking-widest text-muted-foreground transition-all">Archive Squad</button>
             <button className="px-8 py-3 rounded-2xl bg-primary text-primary-foreground font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20 transition-all">Reassign Objectives</button>
-        </div>
+          </div>
+        )}
       </motion.div>
     </div>
   );

@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
-import { cn, getPriorityColor, getStatusColor, formatDate, formatRelativeTime } from "@/lib/utils";
+import { cn, getPriorityColor, getStatusColor, formatDate, formatRelativeTime, isAdmin } from "@/lib/utils";
 import Link from "next/link";
 import CreateTaskModal from "@/components/tasks/CreateTaskModal";
 import TaskCard from "@/components/tasks/TaskCard";
@@ -117,14 +117,16 @@ export default function DashboardPage() {
             You have <span className="text-foreground">{stats.inProgress} active tasks</span> representing {stats.rate}% overall completion.
           </p>
         </div>
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center justify-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all whitespace-nowrap"
-        >
-          <Plus className="w-5 h-5" /> Create New Task
-        </motion.button>
+        {isAdmin(user?.role || "") && (
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center justify-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all whitespace-nowrap"
+          >
+            <Plus className="w-5 h-5" /> Create New Task
+          </motion.button>
+        )}
       </div>
 
       {/* Stats - Responsive Scroll */}

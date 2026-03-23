@@ -28,7 +28,6 @@ const rolePermissions = {
     permissions.delete_meetings,
   ],
   Manager: [
-    permissions.create_tasks,
     permissions.view_analytics,
     permissions.schedule_meetings,
   ],

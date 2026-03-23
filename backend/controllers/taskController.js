@@ -159,8 +159,15 @@ exports.updateTask = async (req, res) => {
     const updates = req.body;
     const oldStatus = task.status;
 
+    // Field-level privilege enforcement
+    const adminOnlyFields = ['assignedTo', 'team', 'priority', 'dueDate', 'estimatedHours', 'title', 'description', 'tags', 'createdBy'];
+    
     Object.keys(updates).forEach(key => {
       if (updates[key] !== undefined) {
+        if (!isAdmin && adminOnlyFields.includes(key)) {
+          console.warn(`[SECURITY] Standard operative ${req.user._id} attempted unauthorized override of ${key}`);
+          return; // Skip unauthorized field updates
+        }
         task[key] = updates[key];
       }
     });
