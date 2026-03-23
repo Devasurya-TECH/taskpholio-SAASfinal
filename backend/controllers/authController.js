@@ -6,8 +6,8 @@ const { emailQueue } = require('../services/queueService');
 const Joi = require('joi');
 const jwt = require('jsonwebtoken');
 
-const generateToken = (id) =>
-  jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
+const generateToken = (id, role) =>
+  jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
 
 const registerSchema = Joi.object({
   name: Joi.string().min(2).max(50).required(),
@@ -29,22 +29,24 @@ const register = async (req, res) => {
     console.log("REGISTER HIT");
     console.log("BODY:", req.body);
     const { name, email, password, role, team } = req.body;
+    const normalizedEmail = email.toLowerCase().trim();
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: normalizedEmail });
 
     if (existingUser) {
       return res.status(400).json({ message: "User already exists" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    console.log("SAVING HASH:", hashedPassword);
 
     const user = await User.create({
       name,
-      email,
+      email: normalizedEmail,
       password: hashedPassword,
       role: role || "Member",
       team: team || null
@@ -52,10 +54,8 @@ const register = async (req, res) => {
 
     console.log("USER CREATED:", user);
 
-    return res.status(201).json({
-      success: true,
-      user
-    });
+    const token = generateToken(user._id, user.role);
+    return success(res, { user, token }, 'Registration successful', 201);
 
   } catch (error) {
     console.error("REGISTER ERROR:", error);
@@ -65,23 +65,43 @@ const register = async (req, res) => {
   }
 };
 
-const login = async (req, res, next) => {
+const login = async (req, res) => {
   try {
-    const { error: joiError, value } = loginSchema.validate(req.body);
-    if (joiError) return error(res, joiError.details[0].message, 400);
+    const { email, password } = req.body;
+    const normalizedEmail = email.toLowerCase().trim();
 
-    const user = await User.findOne({ email: value.email, isDeleted: { $ne: true } }) // Handle missing flags
+    console.log("LOGIN ATTEMPT:", normalizedEmail);
+
+    const user = await User.findOne({ email: normalizedEmail, isDeleted: { $ne: true } })
       .select('+password')
       .populate('team', 'name');
-    if (!user || !(await user.comparePassword(value.password))) {
-      return error(res, 'Invalid email or password.', 401);
+
+    if (!user) {
+      console.log("USER NOT FOUND:", normalizedEmail);
+      return res.status(400).json({ message: "User not found" });
     }
 
-    const token = generateToken(user._id);
-    const userObj = user.toJSON();
-    return success(res, { user: userObj, token }, 'Login successful');
-  } catch (err) {
-    next(err);
+    console.log("INPUT PASSWORD:", password);
+    console.log("HASHED PASSWORD:", user.password);
+
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    console.log("PASSWORD MATCH:", isMatch);
+
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid password" });
+    }
+
+    const token = generateToken(user._id, user.role);
+
+    return success(res, {
+      token,
+      user
+    }, 'Login successful');
+
+  } catch (error) {
+    console.error("LOGIN ERROR:", error);
+    return res.status(500).json({ message: error.message });
   }
 };
 

@@ -27,12 +27,17 @@ export const useAuthStore = create<AuthState>()(
       login: async (email, password) => {
         set({ isLoading: true });
         try {
+          const API = process.env.NEXT_PUBLIC_API_URL;
+          console.log("LOGIN URL:", `${API}/auth/login`);
+          
           const res = await api.post("/auth/login", { email, password });
           const { user, token } = res.data.data;
+          
           localStorage.setItem("taskpholio_token", token);
           set({ user, token, isAuthenticated: true, isLoading: false });
-        } catch (err) {
+        } catch (err: any) {
           set({ isLoading: false });
+          console.error("LOGIN ERROR:", err.response?.data || err.message);
           throw err;
         }
       },

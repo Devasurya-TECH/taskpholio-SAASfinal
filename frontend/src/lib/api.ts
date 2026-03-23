@@ -1,7 +1,10 @@
 import axios from "axios";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
-const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-const API_BASE_URL = `${baseUrl.replace(/\/$/, '')}/api/v1`;
+if (!API_BASE_URL) {
+  console.warn("NEXT_PUBLIC_API_URL is not defined. API requests might fail.");
+}
+
 export const api = axios.create({
   baseURL: API_BASE_URL,
   headers: { "Content-Type": "application/json" },

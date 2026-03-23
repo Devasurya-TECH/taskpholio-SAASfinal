@@ -43,7 +43,8 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
 
     const { addLiveTask, updateLiveTask, removeLiveTask, addLiveProgress } = useTaskStore.getState();
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (!apiUrl) return;
     const socketUrl = apiUrl.split('/api')[0];
 
     const socketInstance = io(socketUrl, {
