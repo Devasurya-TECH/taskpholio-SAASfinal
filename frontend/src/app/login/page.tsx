@@ -10,6 +10,7 @@ import { toast } from "sonner";
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [staySignedIn, setStaySignedIn] = useState(true);
   const { login, isLoading } = useAuthStore();
   const router = useRouter();
 
@@ -17,7 +18,7 @@ export default function LoginPage() {
     e.preventDefault();
     if (isLoading) return;
     try {
-      await login(email, password);
+      await login(email, password, staySignedIn);
       toast.success("Welcome back!");
       router.push("/dashboard");
     } catch (err: any) {
@@ -85,6 +86,23 @@ export default function LoginPage() {
                   className="w-full bg-secondary border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all"
                 />
               </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={staySignedIn}
+                  onChange={(e) => setStaySignedIn(e.target.checked)}
+                  className="w-4 h-4 rounded border-border bg-secondary text-primary focus:ring-primary/50"
+                />
+                <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">
+                  Stay signed in
+                </span>
+              </label>
+              <Link href="/forgot-password" title="forgot-password" className="text-sm text-primary hover:underline font-medium">
+                Forgot password?
+              </Link>
             </div>
 
             <motion.button

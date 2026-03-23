@@ -29,7 +29,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     setIsMounted(true);
-    const localToken = localStorage.getItem("taskpholio_token");
+    const localToken = localStorage.getItem("taskpholio_token") || sessionStorage.getItem("taskpholio_token");
     
     if (!localToken) {
       router.replace("/login");
