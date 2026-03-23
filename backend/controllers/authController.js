@@ -18,10 +18,18 @@ exports.register = async (req, res) => {
     const { name, email, password, role, team } = req.body;
 
     // Validate input
-    if (!name || !email || !password || !team) {
+    if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide all required fields'
+        message: 'Please provide name, email and password'
+      });
+    }
+
+    // Members must belong to a team
+    if ((!role || role === 'Member') && !team) {
+      return res.status(400).json({
+        success: false,
+        message: 'Members must select a team'
       });
     }
 
@@ -34,13 +42,15 @@ exports.register = async (req, res) => {
       });
     }
 
-    // Verify team exists
-    const teamExists = await Team.findById(team);
-    if (!teamExists) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid team selection'
-      });
+    // Verify team exists (only when team is provided)
+    if (team) {
+      const teamExists = await Team.findById(team);
+      if (!teamExists) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid team selection'
+        });
+      }
     }
 
     // Create user
@@ -49,18 +59,20 @@ exports.register = async (req, res) => {
       email,
       password,
       role: role || 'Member',
-      team
+      team: team || undefined
     });
 
-    // Add user to team
-    await Team.findByIdAndUpdate(team, {
-      $push: { members: user._id }
-    });
+    // Add user to team (only if team was provided)
+    if (team) {
+      await Team.findByIdAndUpdate(team, {
+        $push: { members: user._id }
+      });
+    }
 
-    // Generate verification token
+    // Generate verification token — use findByIdAndUpdate to avoid
+    // triggering the bcrypt pre-save hook (which would double-hash the password)
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    user.verificationToken = verificationToken;
-    await user.save();
+    await User.findByIdAndUpdate(user._id, { verificationToken });
 
     // Send verification email
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;

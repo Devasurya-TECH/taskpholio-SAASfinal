@@ -39,19 +39,20 @@ const requirePermission = (permission) => {
 const requireTaskAccess = async (req, res, next) => {
   try {
     const task = await Task.findById(req.params.id)
-        .populate('creator', 'name role')
         .populate('assignedTo', 'name')
-        .populate('visibleTo', 'name');
+        .populate('createdBy', 'name role');
 
-    if (!task || task.isDeleted) return error(res, 'Task not found', 404);
+    if (!task || task.isArchived) return error(res, 'Task not found', 404);
 
-    const isVisible = 
-      req.user.role === 'CEO' || 
-      req.user.role === 'CTO' ||
-      task.visibility === 'public' || 
-      task.visibleTo.some((uid) => (uid._id || uid).toString() === req.user._id.toString());
-    
-    if (!isVisible) return error(res, 'Access denied. You do not have permission to view this task.', 403);
+    const userId = req.user._id.toString();
+    const isAdmin = req.user.role === 'CEO' || req.user.role === 'CTO';
+    const isAssigned = task.assignedTo && task.assignedTo._id.toString() === userId;
+    const isCreator = task.createdBy && task.createdBy._id.toString() === userId;
+    const isWatcher = task.watchers && task.watchers.some((wid) => wid.toString() === userId);
+
+    if (!isAdmin && !isAssigned && !isCreator && !isWatcher) {
+      return error(res, 'Access denied. You do not have permission to view this task.', 403);
+    }
 
     req.task = task;
     next();

@@ -42,7 +42,7 @@ exports.getTeam = async (req, res) => {
     
     if (!team) return res.status(404).json({ success: false, message: 'Team not found' });
     
-    res.json({ success: true, team });
+    res.json({ success: true, data: { team } });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -52,7 +52,7 @@ exports.getTeam = async (req, res) => {
 exports.updateTeam = async (req, res) => {
   try {
     const team = await Team.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.json({ success: true, team });
+    res.json({ success: true, data: { team } });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

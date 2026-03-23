@@ -318,6 +318,9 @@ exports.archiveTask = async (req, res) => {
   }
 };
 
+// Delete Task — alias for archiveTask (soft delete for SaaS)
+exports.deleteTask = exports.archiveTask;
+
 exports.getTask = async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
