@@ -48,15 +48,14 @@ const authLimiter = rateLimit({
   }
 });
 
-// EMAIL-SPECIFIC LIMITER (prevent account enumeration)
 const emailLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5,
+  windowMs: 15 * 60 * 1000, // 15 minutes (shortened window)
+  max: isDevelopment ? 100 : 20, // 100 for dev, 20 for prod
   keyGenerator: (req) => `email:${req.body?.email?.toLowerCase() || req.ip}`,
   skipSuccessfulRequests: true,
   validate: { default: false },
   handler: (req, res) => {
-    error(res, 'Too many attempts for this email. Try again later.', 429);
+    error(res, 'Multiple failed attempts for this email. Tactical lockout engaged. Please wait 15 minutes.', 429);
   }
 });
 
