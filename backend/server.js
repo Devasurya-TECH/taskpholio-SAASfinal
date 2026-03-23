@@ -19,6 +19,7 @@ dotenv.config();
 connectDB();
 
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy (Render, Vercel, CloudFlare)
 const server = http.createServer(app);
 
 // Initialize Tactical Socket layer
@@ -61,7 +62,8 @@ app.use(mongoSanitize());
 // Request logging
 app.use(morgan('dev', { stream: { write: (msg) => logger.info(msg.trim()) } }));
 
-// Rate limiting - Global API protection
+// Rate limiting - Selective protection
+app.use('/api/v1/health', (req, res, next) => next()); // Skip health checks
 app.use('/api', apiLimiter);
 
 // Health check protocol
@@ -74,6 +76,10 @@ app.get('/health', (req, res) => {
 });
 
 // Tactical Routes
+const { authLimiter } = require('./middleware/rateLimiter');
+app.use('/api/v1/auth/login', authLimiter);
+app.use('/api/v1/auth/register', authLimiter);
+
 app.use('/api/v1/auth', require('./routes/authRoutes'));
 app.use('/api/v1/tasks', require('./routes/taskRoutes'));
 app.use('/api/v1/teams', require('./routes/teamRoutes'));

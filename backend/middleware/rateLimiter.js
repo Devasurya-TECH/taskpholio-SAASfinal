@@ -20,28 +20,31 @@ const checkTrustedIP = (req, res, next) => {
   next();
 };
 
-// GENERAL API LIMITER
+// GENERAL API LIMITER (Increased for fluid app experience)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, 
-  max: 100, 
+  max: isDevelopment ? 10000 : 1000, // 1000 requests per 15 min per IP
   validate: { default: false },
   handler: (req, res) => {
-    error(res, 'Too many requests, please try again later.', 429);
+    error(res, 'System capacity reached. Please try again later.', 429);
   }
 });
 
-// SMART AUTH LIMITER (tiered based on user type)
+// SMART AUTH LIMITER (IP + Email protection)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: async (req) => {
+    if (isDevelopment) return 500; // High limit for dev
     if (req.trustedIP) return 1000; // Trusted networks
-    if (req.user?.isPremium) return 500; // Premium users
-    return 10; // Free tier: 10 attempts per 15 min
+    return 20; // 20 attempts per 15 min
+  },
+  keyGenerator: (req) => {
+    return (req.ip || 'unknown') + (req.body?.email || '');
   },
   validate: { default: false },
   skipSuccessfulRequests: false,
   handler: (req, res) => {
-    error(res, 'Too many login attempts. Please try again in 15 minutes.', 429);
+    error(res, 'Too many login attempts. Critical lock engaged. Please wait 15 minutes.', 429);
   }
 });
 

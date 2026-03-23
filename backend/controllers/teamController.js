@@ -75,7 +75,7 @@ exports.addMembers = async (req, res) => {
       { team: team._id }
     );
 
-    res.json({ success: true, team });
+    res.json({ success: true, data: { team } });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

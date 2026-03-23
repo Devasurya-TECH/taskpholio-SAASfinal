@@ -16,12 +16,12 @@ const getAdvancedAnalytics = async (req, res, next) => {
 
     const now = new Date();
     
-    // 1. Overdue tracking (Tasks assigned to me or created by me that crossed deadline and not completed)
+    // 1. Overdue tracking (Tasks assigned to me or created by me that crossed dueDate and not completed)
     const overdueFilter = {
-      $or: [{ creator: req.user._id }, { assignedTo: req.user._id }],
-      isCompleted: false,
-      deadline: { $lt: now, $ne: null },
-      isDeleted: { $ne: true }
+      $or: [{ createdBy: req.user._id }, { assignedTo: req.user._id }],
+      status: { $ne: 'completed' },
+      dueDate: { $lt: now, $ne: null },
+      isArchived: false
     };
     const overdueTasks = await Task.countDocuments(overdueFilter);
 
@@ -32,10 +32,10 @@ const getAdvancedAnalytics = async (req, res, next) => {
     const completionTrends = await Task.aggregate([
       {
         $match: {
-          $or: [{ visibility: 'public' }, { visibleTo: req.user._id }],
-          status: 'Completed',
+          $or: [{ team: req.user.team }, { assignedTo: req.user._id }, { createdBy: req.user._id }],
+          status: 'completed',
           updatedAt: { $gte: thirtyDaysAgo },
-          isDeleted: { $ne: true }
+          isArchived: false
         }
       },
       {
@@ -51,13 +51,13 @@ const getAdvancedAnalytics = async (req, res, next) => {
     let teamMetrics = [];
     if (['CEO', 'CTO'].includes(req.user.role)) {
       teamMetrics = await Task.aggregate([
-        { $match: { team: { $ne: null }, isDeleted: { $ne: true } } },
+        { $match: { team: { $ne: null }, isArchived: false } },
         {
           $group: {
             _id: "$team",
             totalTasks: { $sum: 1 },
             completedTasks: {
-              $sum: { $cond: [{ $eq: ["$status", "Completed"] }, 1, 0] }
+              $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] }
             },
             avgProgress: { $avg: "$progress" }
           }
@@ -87,13 +87,13 @@ const getAdvancedAnalytics = async (req, res, next) => {
       // Member sees their own team
       const teamId = req.user.team._id || req.user.team;
       const metrics = await Task.aggregate([
-        { $match: { team: teamId, isDeleted: { $ne: true } } },
+        { $match: { team: teamId, isArchived: false } },
         {
           $group: {
             _id: "$team",
             totalTasks: { $sum: 1 },
             completedTasks: {
-              $sum: { $cond: [{ $eq: ["$status", "Completed"] }, 1, 0] }
+              $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] }
             },
             avgProgress: { $avg: "$progress" }
           }
