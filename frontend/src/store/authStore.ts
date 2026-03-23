@@ -22,7 +22,11 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      staySignedIn: true, // Default to true for backward compatibility
+      user: null,
+      token: null,
+      isLoading: false,
+      isAuthenticated: false,
+      staySignedIn: true,
 
       login: async (email, password, staySignedIn = true) => {
         set({ isLoading: true, staySignedIn });
@@ -59,6 +63,21 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
+      fetchMe: async () => {
+        try {
+          const res = await api.get("auth/me");
+          set({ user: res.data.data.user, isAuthenticated: true });
+        } catch (error) {
+          set({ user: null, token: null, isAuthenticated: false });
+          localStorage.removeItem("taskpholio_token");
+          sessionStorage.removeItem("taskpholio_token");
+        }
+      },
+
+      setAuth: (user, token) => {
+        set({ user, token, isAuthenticated: true });
+      },
+
       logout: async () => {
         try {
           await api.post("auth/logout");
@@ -70,22 +89,6 @@ export const useAuthStore = create<AuthState>()(
           set({ user: null, token: null, isAuthenticated: false });
         }
       },
-
-      fetchMe: async () => {
-        try {
-          const res = await api.get("auth/me");
-          const newUser = res.data.data.user;
-          const currentUser = get().user;
-          
-          if (JSON.stringify(currentUser) !== JSON.stringify(newUser)) {
-            set({ user: newUser, isAuthenticated: true });
-          }
-        } catch {
-          set({ user: null, token: null, isAuthenticated: false });
-        }
-      },
-
-      setAuth: (user, token) => set({ user, token, isAuthenticated: true }),
 
       updateProfile: async (updates) => {
         try {
@@ -104,19 +107,18 @@ export const useAuthStore = create<AuthState>()(
       storage: {
         getItem: (name) => {
           const local = localStorage.getItem(name);
-          if (local) return local;
-          return sessionStorage.getItem(name);
+          if (local) return JSON.parse(local);
+          const session = sessionStorage.getItem(name);
+          if (session) return JSON.parse(session);
+          return null;
         },
         setItem: (name, value) => {
-          // Check the state to decide where to persist
-          // Since this is called from the middleware, we can't easily access get().staySignedIn
-          // But we can check if the value contains staySignedIn: true
-          const state = JSON.parse(value);
-          if (state.state.staySignedIn) {
-            localStorage.setItem(name, value);
+          const valStr = JSON.stringify(value);
+          if (value.state.staySignedIn) {
+            localStorage.setItem(name, valStr);
             sessionStorage.removeItem(name);
           } else {
-            sessionStorage.setItem(name, value);
+            sessionStorage.setItem(name, valStr);
             localStorage.removeItem(name);
           }
         },
