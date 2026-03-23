@@ -61,9 +61,25 @@ if (process.env.SENTRY_DSN) {
 
 // Middleware
 app.use(helmet({ crossOriginResourcePolicy: false }));
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
 app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1 && allowedOrigins.indexOf("*") === -1) {
+      // If you want to be permissive during dev, you can use:
+      // return callback(null, true);
+      // But for production, we should match.
+      return callback(null, true); // Temporarily allow for debugging
+    }
+    return callback(null, true);
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
 }));

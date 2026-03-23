@@ -26,8 +26,7 @@ const bcrypt = require("bcryptjs");
 
 const register = async (req, res) => {
   try {
-    console.log("REGISTER HIT");
-    console.log("BODY:", req.body);
+    console.log("REGISTER HIT - BODY:", JSON.stringify(req.body));
     const { name, email, password, role, team } = req.body;
     const normalizedEmail = email.toLowerCase().trim();
 
@@ -67,7 +66,14 @@ const register = async (req, res) => {
 
 const login = async (req, res) => {
   try {
+    console.log("LOGIN HIT - BODY:", JSON.stringify(req.body));
     const { email, password } = req.body;
+    
+    if (!email || !password) {
+      console.log("MISSING EMAIL OR PASSWORD");
+      return res.status(400).json({ message: "Email and password are required" });
+    }
+
     const normalizedEmail = email.toLowerCase().trim();
 
     console.log("LOGIN ATTEMPT:", normalizedEmail);
