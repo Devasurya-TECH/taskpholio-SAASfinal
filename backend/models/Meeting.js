@@ -1,28 +1,71 @@
 const mongoose = require('mongoose');
 
-const meetingSchema = new mongoose.Schema(
-  {
-    title: { type: String, required: true, trim: true },
-    description: { type: String, default: '' },
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    dateTime: { type: Date, required: true },
-    notes: { type: String, default: '' },
-    meetingLink: { type: String, default: '' },
+const meetingSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  description: String,
+  scheduledBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  attendees: [{
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
     status: {
       type: String,
-      enum: ['scheduled', 'completed', 'cancelled'],
-      default: 'scheduled',
-    },
-    reminders: [{ type: Date }],
-    reminderTime: { type: Date },
-    isDeleted: { type: Boolean, default: false }
+      enum: ['pending', 'accepted', 'declined'],
+      default: 'pending'
+    }
+  }],
+  teams: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Team'
+  }],
+  startTime: {
+    type: Date,
+    required: true
   },
-  { timestamps: true }
-);
-
-meetingSchema.index({ participants: 1 });
-meetingSchema.index({ dateTime: 1 });
-meetingSchema.index({ createdAt: -1 });
+  endTime: {
+    type: Date,
+    required: true
+  },
+  meetingLink: String,
+  location: String,
+  type: {
+    type: String,
+    enum: ['online', 'offline'],
+    default: 'online'
+  },
+  agenda: [String],
+  notes: String,
+  attachments: [{
+    fileName: String,
+    fileUrl: String,
+    publicId: String
+  }],
+  reminder: {
+    enabled: { type: Boolean, default: true },
+    minutes: { type: Number, default: 15 } // minutes before
+  },
+  recurring: {
+    enabled: { type: Boolean, default: false },
+    frequency: {
+      type: String,
+      enum: ['daily', 'weekly', 'monthly']
+    },
+    endDate: Date
+  },
+  status: {
+    type: String,
+    enum: ['scheduled', 'ongoing', 'completed', 'cancelled'],
+    default: 'scheduled'
+  }
+}, { timestamps: true });
 
 module.exports = mongoose.model('Meeting', meetingSchema);

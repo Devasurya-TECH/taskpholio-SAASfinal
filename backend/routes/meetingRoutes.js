@@ -1,15 +1,20 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requirePermission } = require('../middleware/auth');
-const { strictUserLimiter } = require('../middleware/rateLimiter');
-const { getMeetings, createMeeting, updateMeeting, deleteMeeting } = require('../controllers/meetingController');
+const { requireAuth } = require('../middleware/auth');
+const { 
+  createMeeting, 
+  getMeetings, 
+  updateMeeting, 
+  updateAttendance,
+  cancelMeeting 
+} = require('../controllers/meetingController');
 
 router.use(requireAuth);
-router.use(strictUserLimiter);
 
+router.post('/', createMeeting);
 router.get('/', getMeetings);
-router.post('/', requirePermission('schedule_meetings'), createMeeting);
 router.patch('/:id', updateMeeting);
-router.delete('/:id', deleteMeeting);
+router.patch('/:id/attendance', updateAttendance);
+router.delete('/:id', cancelMeeting);
 
 module.exports = router;

@@ -1,258 +1,487 @@
 const User = require('../models/User');
 const Team = require('../models/Team');
-const { success, error } = require('../utils/apiResponse');
-const { logAudit } = require('../utils/auditLogger');
-const { emailQueue } = require('../services/queueService');
-const Joi = require('joi');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const sendEmail = require('../utils/sendEmail');
+const ActivityLog = require('../models/ActivityLog');
 
-const generateToken = (id, role) =>
-  jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
+// Generate JWT Token
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRE || '7d'
+  });
+};
 
-const registerSchema = Joi.object({
-  name: Joi.string().min(2).max(50).required(),
-  email: Joi.string().email().required(),
-  password: Joi.string().min(6).required(),
-  role: Joi.string().valid('CEO', 'CTO', 'Member').default('Member'),
-  team: Joi.string().allow(null, '').optional(),
-});
-
-const loginSchema = Joi.object({
-  email: Joi.string().email().required(),
-  password: Joi.string().required(),
-});
-
-const bcrypt = require("bcryptjs");
-
-const register = async (req, res) => {
+// Register User
+exports.register = async (req, res) => {
   try {
-    console.log("REGISTER HIT - BODY:", JSON.stringify(req.body));
     const { name, email, password, role, team } = req.body;
-    const normalizedEmail = email.toLowerCase().trim();
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: "Missing required fields" });
+    // Validate input
+    if (!name || !email || !password || !team) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all required fields'
+      });
     }
 
-    const existingUser = await User.findOne({ email: normalizedEmail });
-
+    // Check if user exists
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ message: "User already exists" });
+      return res.status(400).json({
+        success: false,
+        message: 'Email already registered'
+      });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    console.log("SAVING HASH:", hashedPassword);
+    // Verify team exists
+    const teamExists = await Team.findById(team);
+    if (!teamExists) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid team selection'
+      });
+    }
 
+    // Create user
     const user = await User.create({
       name,
-      email: normalizedEmail,
-      password: hashedPassword,
-      role: role || "Member",
-      team: team || null
+      email,
+      password,
+      role: role || 'Member',
+      team
     });
 
-    console.log("USER CREATED:", user);
+    // Add user to team
+    await Team.findByIdAndUpdate(team, {
+      $push: { members: user._id }
+    });
 
-    const token = generateToken(user._id, user.role);
-    return success(res, { user, token }, 'Registration successful', 201);
+    // Generate verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    user.verificationToken = verificationToken;
+    await user.save();
 
+    // Send verification email
+    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+    try {
+      await sendEmail({
+        to: email,
+        subject: 'Verify Your Email - Taskpholio',
+        html: `
+          <h2>Welcome to Taskpholio!</h2>
+          <p>Please verify your email by clicking the link below:</p>
+          <a href="${verificationUrl}">Verify Email</a>
+        `
+      });
+    } catch (emailErr) {
+      console.error('Email verification send failed:', emailErr);
+      // Don't fail registration if email fails, but inform user
+    }
+
+    // Log activity
+    await ActivityLog.create({
+      user: user._id,
+      action: 'LOGIN',
+      description: 'User registered',
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    // Generate token
+    const token = generateToken(user._id);
+
+    // Send response
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful. Please check your email to verify your account.',
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        team: user.team,
+        avatar: user.avatar,
+        emailVerified: user.emailVerified
+      }
+    });
   } catch (error) {
-    console.error("REGISTER ERROR:", error);
-    return res.status(500).json({
+    console.error('Registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Registration failed',
+      error: error.message
+    });
+  }
+};
+
+// Login User
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide email and password'
+      });
+    }
+
+    // Find user with password
+    const user = await User.findOne({ email })
+      .select('+password')
+      .populate('team', 'name color');
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Check if user is active
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Account has been deactivated. Please contact admin.'
+      });
+    }
+
+    // Check password
+    const isPasswordMatch = await user.comparePassword(password);
+    if (!isPasswordMatch) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Update last seen
+    user.lastSeen = Date.now();
+    user.status = 'active';
+    await user.save();
+
+    // Log activity
+    await ActivityLog.create({
+      user: user._id,
+      action: 'LOGIN',
+      description: 'User logged in',
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    // Generate token
+    const token = generateToken(user._id);
+
+    // Remove password from response
+    user.password = undefined;
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        team: user.team,
+        avatar: user.avatar,
+        emailVerified: user.emailVerified,
+        preferences: user.preferences
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Login failed',
+      error: error.message
+    });
+  }
+};
+
+// Get Current User
+exports.getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .populate('team', 'name color description');
+
+    res.json({
+      success: true,
+      user
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
       message: error.message
     });
   }
 };
 
-const login = async (req, res) => {
+// Logout
+exports.logout = async (req, res) => {
   try {
-    console.log("LOGIN HIT - BODY:", JSON.stringify(req.body));
-    const { email, password } = req.body;
-    
-    if (!email || !password) {
-      console.log("MISSING EMAIL OR PASSWORD");
-      return res.status(400).json({ message: "Email and password are required" });
-    }
+    // Update user status
+    await User.findByIdAndUpdate(req.user._id, {
+      status: 'offline',
+      lastSeen: Date.now()
+    });
 
-    const normalizedEmail = email.toLowerCase().trim();
+    // Log activity
+    await ActivityLog.create({
+      user: req.user._id,
+      action: 'LOGOUT',
+      description: 'User logged out',
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
 
-    console.log("LOGIN ATTEMPT:", normalizedEmail);
+    res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
 
-    const user = await User.findOne({ email: normalizedEmail, isDeleted: { $ne: true } })
-      .select('+password')
-      .populate('team', 'name');
+// Verify Email
+exports.verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const user = await User.findOne({ verificationToken: token });
 
     if (!user) {
-      console.log("USER NOT FOUND:", normalizedEmail);
-      return res.status(400).json({ message: "User not found" });
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired verification token'
+      });
     }
 
-    console.log("INPUT PASSWORD:", password);
-    console.log("HASHED PASSWORD:", user.password);
-
-    const isMatch = await bcrypt.compare(password, user.password);
-
-    console.log("PASSWORD MATCH:", isMatch);
-
-    if (!isMatch) {
-      // Increment failed attempts and potentially lock account
-      user.loginAttempts = (user.loginAttempts || 0) + 1;
-      if (user.loginAttempts >= 5) {
-        user.lockoutUntil = Date.now() + 15 * 60 * 1000; // 15 minute lockout
-        user.loginAttempts = 0;
-        await user.save();
-        return res.status(423).json({ message: "Account locked due to too many failed attempts. Try again in 15 minutes." });
-      }
-      await user.save();
-      return res.status(400).json({ message: "Invalid password" });
-    }
-
-    // Reset failed attempts on successful login
-    user.loginAttempts = 0;
-    user.lockoutUntil = undefined;
+    user.emailVerified = true;
+    user.verificationToken = undefined;
     await user.save();
 
-    const token = generateToken(user._id, user.role);
-
-    return success(res, {
-      token,
-      user
-    }, 'Login successful');
-
-  } catch (error) {
-    console.error("LOGIN ERROR:", error);
-    return res.status(500).json({ message: error.message });
-  }
-};
-
-const getMe = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.user._id).populate('team', 'name');
-    return success(res, { user });
-  } catch (err) {
-    next(err);
-  }
-};
-
-const getAllUsers = async (req, res, next) => {
-  try {
-    const { role, search, team } = req.query;
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
-    const skip = (page - 1) * limit;
-
-    const filter = { isDeleted: { $ne: true } }; // Ensure it checks existing accounts missing the key
-    if (role) filter.role = role;
-    if (team) filter.team = team;
-    if (search) filter.name = { $regex: search, $options: 'i' };
-
-    const total = await User.countDocuments(filter);
-    const users = await User.find(filter)
-      .select('-password') // Kept select('-password') as it's standard for user lists
-      .populate('team', 'name')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    return success(res, {
-      users,
-      pagination: { total, page, totalPages: Math.ceil(total / limit), limit }
+    res.json({
+      success: true,
+      message: 'Email verified successfully'
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
-const updateUser = async (req, res, next) => {
+// Forgot Password
+exports.forgotPassword = async (req, res) => {
   try {
-    const allowed = ['name', 'role', 'email', 'team'];
-    const updates = {};
-    allowed.forEach((f) => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
+    const { email } = req.body;
 
-    if (updates.role && updates.role !== 'Member') {
-      updates.team = null; // Clear team if changed to CEO/CTO
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'No user found with that email'
+      });
     }
 
-    const user = await User.findById(req.params.id);
-    if (!user || user.isDeleted) return error(res, 'User not found.', 404); // Added user.isDeleted check
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    user.resetPasswordToken = crypto
+      .createHash('sha256')
+      .update(resetToken)
+      .digest('hex');
+    user.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
 
-    const oldState = user.toObject(); // Capture old state for audit log
-
-    const oldTeam = user.team?.toString() || null;
-    let newTeam = updates.team !== undefined ? updates.team : oldTeam;
-
-    // Convert empty string/null cases
-    if (!newTeam) newTeam = null;
-
-    // Apply updates
-    Object.assign(user, updates);
-    if (newTeam === null) user.team = undefined; // Set to undefined to clear the field in Mongoose
     await user.save();
 
-    // Sync Team documents if team changed
-    if (oldTeam !== newTeam) {
-      if (oldTeam) await Team.findByIdAndUpdate(oldTeam, { $pull: { members: user._id } });
-      if (newTeam) await Team.findByIdAndUpdate(newTeam, { $addToSet: { members: user._id } });
+    // Send reset email
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    await sendEmail({
+      to: email,
+      subject: 'Password Reset Request - Taskpholio',
+      html: `
+        <h2>Password Reset Request</h2>
+        <p>You requested a password reset. Click the link below to reset your password:</p>
+        <a href="${resetUrl}">Reset Password</a>
+        <p>This link will expire in 10 minutes.</p>
+        <p>If you didn't request this, please ignore this email.</p>
+      `
+    });
+
+    res.json({
+      success: true,
+      message: 'Password reset email sent'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// Reset Password
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    const resetPasswordToken = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
+
+    const user = await User.findOne({
+      resetPasswordToken,
+      resetPasswordExpire: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset token'
+      });
     }
 
-    const populated = await User.findById(user._id).select('-password').populate('team', 'name');
-
-    await logAudit('UPDATE', 'User', user._id, req.user._id, { oldState, newState: populated.toObject() }); // Log audit
-
-    return success(res, { user: populated }, 'User updated');
-  } catch (err) {
-    next(err);
-  }
-};
-
-const uploadAvatar = async (req, res, next) => {
-  try {
-    if (!req.file) return error(res, 'No file provided.', 400);
-
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      { avatar: req.file.path },
-      { new: true, runValidators: true }
-    ).select('-password');
-
-    return success(res, { user }, 'Avatar uploaded successfully');
-  } catch (err) {
-    next(err);
-  }
-};
-
-const deleteUser = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.params.id);
-    if (!user || user.isDeleted) return error(res, 'User not found.', 404); // Check for existing and not already deleted
-
-    const oldState = user.toObject(); // Capture old state for audit log
-
-    user.isDeleted = true; // Soft delete
-    user.deletedAt = new Date(); // Record deletion timestamp
+    user.password = password;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
     await user.save();
 
-    // The instruction snippet removed team sync, so following that.
-    // If team sync is desired for soft delete, it should be re-added here.
-    // if (user.team) {
-    //   await Team.findByIdAndUpdate(user.team, { $pull: { members: user._id } });
-    // }
+    // Log activity
+    await ActivityLog.create({
+      user: user._id,
+      action: 'PASSWORD_CHANGED',
+      description: 'Password reset via email',
+      ipAddress: req.ip
+    });
 
-    await logAudit('DELETE', 'User', user._id, req.user._id, { oldState, newState: user.toObject() }); // Log audit
-
-    return success(res, {}, 'User deleted successfully'); // Changed message to reflect soft delete
-  } catch (err) {
-    next(err);
+    res.json({
+      success: true,
+      message: 'Password reset successful'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
-const getPublicTeams = async (req, res, next) => {
+// Update Password (logged in user)
+exports.updatePassword = async (req, res) => {
   try {
-    const teams = await Team.find().select('_id name');
-    return success(res, { teams });
-  } catch (err) {
-    next(err);
+    const { currentPassword, newPassword } = req.body;
+
+    const user = await User.findById(req.user._id).select('+password');
+
+    // Verify current password
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: 'Current password is incorrect'
+      });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    // Log activity
+    await ActivityLog.create({
+      user: user._id,
+      action: 'PASSWORD_CHANGED',
+      description: 'Password updated',
+      ipAddress: req.ip
+    });
+
+    res.json({
+      success: true,
+      message: 'Password updated successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
-module.exports = { register, login, getMe, getAllUsers, updateUser, deleteUser, getPublicTeams, uploadAvatar };
+// Get All Users (Admin)
+exports.getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find().populate('team', 'name color');
+    res.json({
+      success: true,
+      users
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// Update User (Admin)
+exports.updateUser = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true
+    }).populate('team', 'name color');
+
+    res.json({
+      success: true,
+      user
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// Delete User (Admin)
+exports.deleteUser = async (req, res) => {
+  try {
+    await User.findByIdAndUpdate(req.params.id, { isActive: false });
+    res.json({
+      success: true,
+      message: 'User deactivated successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// Get Public Teams
+exports.getPublicTeams = async (req, res) => {
+  try {
+    const teams = await Team.find({ isActive: true }).select('name color icon');
+    res.json({
+      success: true,
+      teams
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};

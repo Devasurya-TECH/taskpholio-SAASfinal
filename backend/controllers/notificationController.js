@@ -1,39 +1,42 @@
 const Notification = require('../models/Notification');
-const { success } = require('../utils/apiResponse');
 
-const getNotifications = async (req, res, next) => {
+// Get My Notifications
+exports.getNotifications = async (req, res) => {
   try {
-    const notifications = await Notification.find({ user: req.user._id })
-      .populate('relatedTask', 'title')
+    const notifications = await Notification.find({ recipient: req.user._id })
       .sort({ createdAt: -1 })
       .limit(50);
-    const unreadCount = await Notification.countDocuments({ user: req.user._id, read: false });
-    return success(res, { notifications, unreadCount });
-  } catch (err) {
-    next(err);
+    
+    res.json({ success: true, notifications });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-const markAsRead = async (req, res, next) => {
+// Mark as Read
+exports.markAsRead = async (req, res) => {
   try {
-    await Notification.updateMany({ user: req.user._id, read: false }, { read: true });
-    return success(res, {}, 'All notifications marked as read');
-  } catch (err) {
-    next(err);
+    await Notification.findByIdAndUpdate(req.params.id, {
+      isRead: true,
+      readAt: new Date()
+    });
+    
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-const markOneAsRead = async (req, res, next) => {
+// Clear All
+exports.clearNotifications = async (req, res) => {
   try {
-    const notif = await Notification.findOneAndUpdate(
-      { _id: req.params.id, user: req.user._id },
-      { read: true },
-      { new: true }
+    await Notification.updateMany(
+      { recipient: req.user._id, isRead: false },
+      { isRead: true, readAt: new Date() }
     );
-    return success(res, { notification: notif });
-  } catch (err) {
-    next(err);
+    
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
-
-module.exports = { getNotifications, markAsRead, markOneAsRead };

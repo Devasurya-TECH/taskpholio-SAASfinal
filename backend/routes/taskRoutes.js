@@ -4,22 +4,30 @@ const { requireAuth, requirePermission, requireTaskAccess } = require('../middle
 const { strictUserLimiter } = require('../middleware/rateLimiter');
 const { upload } = require('../config/cloudinary');
 const {
-  getTasks, getTask, createTask, updateTask, deleteTask,
-  addProgressUpdate, acknowledgeTask, addAttachment,
+  getTasks, 
+  getTask, 
+  createTask, 
+  updateTask, 
+  deleteTask,
+  addComment,
+  addSubtask,
+  toggleSubtask,
+  archiveTask
 } = require('../controllers/taskController');
 
 router.use(requireAuth);
 router.use(strictUserLimiter);
 
 router.get('/', getTasks);
-router.post('/', requirePermission('create_tasks'), createTask); // Only CEO/CTO can create tasks
+router.post('/', requirePermission('create_tasks'), createTask);
 
 router.get('/:id', requireTaskAccess, getTask);
 router.patch('/:id', requireTaskAccess, updateTask);
-router.delete('/:id', requireTaskAccess, deleteTask);
+router.delete('/:id', requireTaskAccess, archiveTask); // Use archive instead of hard delete for SaaS
 
-router.post('/:id/progress', requireTaskAccess, upload.array('attachments', 5), addProgressUpdate);
-router.post('/:id/acknowledge', requireTaskAccess, acknowledgeTask);
-router.post('/:id/attachments', requireTaskAccess, upload.array('files', 5), addAttachment);
+// Enhanced Features
+router.post('/:id/comments', requireTaskAccess, addComment);
+router.post('/:id/subtasks', requireTaskAccess, addSubtask);
+router.patch('/:id/subtasks/:subtaskId', requireTaskAccess, toggleSubtask);
 
 module.exports = router;

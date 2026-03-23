@@ -24,18 +24,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
 
   useEffect(() => {
-    if (token) {
-      fetchMe();
-    } else {
-      router.replace("/login");
-    }
+    const checkAuth = async () => {
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+      
+      // If we already have a user, we don't necessarily need to fetch again immediately
+      // unless we want to ensure freshness.
+      await fetchMe();
+    };
+
+    checkAuth();
   }, [token]);
 
   useEffect(() => {
     if (!isAuthenticated && !token) {
       router.replace("/login");
     }
-  }, [isAuthenticated, token]);
+  }, [isAuthenticated, token, router]);
 
   const title = pageTitles[pathname] || "Taskpholio";
 

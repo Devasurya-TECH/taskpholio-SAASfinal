@@ -1,8 +1,10 @@
 "use client";
-import { useEffect, useState, useRef } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useState, useRef, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckSquare, Clock, AlertCircle, TrendingUp, Zap, Activity,
+  Search, Filter, LayoutGrid, List, Plus, MoreHorizontal,
+  ChevronRight, Calendar, Users
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -12,11 +14,11 @@ import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
 import { cn, getPriorityColor, getStatusColor, formatDate, formatRelativeTime } from "@/lib/utils";
 import Link from "next/link";
+import CreateTaskModal from "@/components/tasks/CreateTaskModal";
+import TaskCard from "@/components/tasks/TaskCard";
 
 const COLORS = ["#22c55e", "#3b82f6", "#a855f7", "#f59e0b"];
-const TEAM_COLORS = ["#06b6d4", "#8b5cf6", "#f43f5e", "#10b981", "#f59e0b", "#3b82f6"];
 
-// ── Animated Counter ──
 function AnimatedCounter({ value }: { value: number }) {
   const [display, setDisplay] = useState(0);
   const ref = useRef<number>(0);
@@ -42,298 +44,233 @@ const StatCard = ({ icon: Icon, label, value, sub, color, delay }: any) => (
   <motion.div
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
-    transition={{ delay: delay * 0.08, duration: 0.4 }}
-    whileHover={{ y: -2, transition: { duration: 0.15 } }}
-    className="glass rounded-xl p-5 flex items-start gap-4 hover:border-primary/30 transition-colors cursor-default"
+    transition={{ delay: delay * 0.1, duration: 0.5 }}
+    className="glass rounded-2xl p-5 flex items-start gap-4 min-w-[240px] md:min-w-0 flex-1 hover:border-primary/30 transition-all group cursor-default"
   >
-    <div className={cn("p-2.5 rounded-lg", color)}>
-      <Icon className="w-5 h-5" />
+    <div className={cn("p-3 rounded-xl transition-transform group-hover:scale-110", color)}>
+      <Icon className="w-6 h-6" />
     </div>
     <div>
-      <p className="text-2xl font-bold text-foreground"><AnimatedCounter value={value} /></p>
-      <p className="text-sm font-medium text-foreground">{label}</p>
-      {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+      <p className="text-3xl font-bold text-foreground tracking-tight"><AnimatedCounter value={value} /></p>
+      <p className="text-sm font-semibold text-foreground/80">{label}</p>
+      {sub && <p className="text-xs text-muted-foreground mt-1 opacity-70">{sub}</p>}
     </div>
   </motion.div>
 );
 
 const Skeleton = ({ className }: { className?: string }) => (
-  <div className={cn("animate-pulse bg-secondary rounded-lg", className)} />
+  <div className={cn("animate-pulse bg-secondary/50 rounded-xl", className)} />
 );
 
 export default function DashboardPage() {
   const { tasks, fetchTasks, isLoading } = useTaskStore();
   const { user } = useAuthStore();
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [view, setView] = useState<"grid" | "list">("grid");
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => { fetchTasks(); }, []);
 
-  const total = tasks.length;
-  const completed = tasks.filter((t) => t.status === "Completed").length;
-  const inProgress = tasks.filter((t) => t.status === "In Progress").length;
-  const todo = tasks.filter((t) => t.status === "Not Started").length;
-  const overdue = tasks.filter(
-    (t) => t.deadline && new Date(t.deadline) < new Date() && t.status !== "Completed"
-  ).length;
-  const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
-
-  const statusData = [
-    { name: "Not Started", value: todo },
-    { name: "In Progress", value: inProgress },
-    { name: "Completed", value: completed },
-  ];
-
-  const priorityData = [
-    { name: "High", value: tasks.filter((t) => t.priority === "High").length },
-    { name: "Medium", value: tasks.filter((t) => t.priority === "Medium").length },
-    { name: "Low", value: tasks.filter((t) => t.priority === "Low").length },
-  ];
-
-  // Activity data for 7 days
-  const activityData = Array.from({ length: 7 }).map((_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    const label = d.toLocaleDateString("en-US", { weekday: "short" });
-    const created = tasks.filter((t) => new Date(t.createdAt).toDateString() === d.toDateString()).length;
-    const done = tasks.filter(
-      (t) => t.status === "Completed" && t.updatedAt && new Date(t.updatedAt).toDateString() === d.toDateString()
+  const stats = useMemo(() => {
+    const total = tasks.length;
+    const completed = tasks.filter((t) => t.status === "completed").length;
+    const inProgress = tasks.filter((t) => t.status === "in-progress").length;
+    const overdue = tasks.filter(
+      (t) => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== "completed"
     ).length;
-    return { day: label, created, completed: done };
-  });
+    const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return { total, completed, inProgress, overdue, rate };
+  }, [tasks]);
 
-  // Team performance: tasks assigned per team (grouped by team field or assignee clusters)
-  const teamPerf = (() => {
-    const map = new Map<string, { total: number; done: number }>();
-    tasks.forEach((t) => {
-      const teamName = (t as any).team?.name || "Unassigned";
-      const entry = map.get(teamName) || { total: 0, done: 0 };
-      entry.total++;
-      if (t.status === "Completed") entry.done++;
-      map.set(teamName, entry);
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(t => {
+      const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase());
+      const matchesFilter = filter === "all" || t.status === filter;
+      return matchesSearch && matchesFilter;
     });
-    return Array.from(map.entries()).map(([name, v]) => ({ name, total: v.total, completed: v.done }));
-  })();
+  }, [tasks, search, filter]);
 
-  // Activity timeline: sorted recent tasks
-  const timeline = [...tasks]
-    .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
-    .slice(0, 8)
-    .map((t) => ({
-      id: t._id,
-      title: t.title,
-      status: t.status,
-      priority: t.priority,
-      time: formatRelativeTime(t.updatedAt || t.createdAt),
-      creator: t.creator?.name || "Unknown",
-      action: t.status === "Completed" ? "completed" : t.status === "In Progress" ? "started" : "created",
-    }));
-
-  const recentTasks = [...tasks]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 5);
-
-  const greeting = (() => {
+  const greeting = useMemo(() => {
     const h = new Date().getHours();
-    if (h < 12) return "morning";
-    if (h < 17) return "afternoon";
-    return "evening";
-  })();
+    if (h < 12) return "Good morning";
+    if (h < 17) return "Good afternoon";
+    return "Good evening";
+  }, []);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-foreground">
-          Good {greeting},{" "}
-          <span className="gradient-text">{user?.name?.split(" ")[0]}</span> 👋
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Here&apos;s what&apos;s happening with your team today.
-        </p>
+    <div className="max-w-7xl mx-auto space-y-8 pb-10">
+      {/* Premium Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <motion.h1 
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="text-3xl md:text-4xl font-black text-foreground tracking-tight"
+          >
+            {greeting},{" "}
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary via-purple-400 to-blue-400 animate-gradient">
+              {user?.name?.split(" ")[0]}
+            </span> 👋
+          </motion.h1>
+          <p className="text-muted-foreground mt-2 font-medium">
+            You have <span className="text-foreground">{stats.inProgress} active tasks</span> representing {stats.rate}% overall completion.
+          </p>
+        </div>
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center justify-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all whitespace-nowrap"
+        >
+          <Plus className="w-5 h-5" /> Create New Task
+        </motion.button>
       </div>
 
-      {/* Stats Cards */}
-      {isLoading ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-24" />)}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard delay={0} icon={CheckSquare} label="Total Tasks" value={total} sub="All assigned tasks" color="bg-primary/10 text-primary" />
-          <StatCard delay={1} icon={Zap} label="In Progress" value={inProgress} sub="Currently active" color="bg-blue-500/10 text-blue-400" />
-          <StatCard delay={2} icon={TrendingUp} label="Completed" value={completed} sub={`${completionRate}% completion rate`} color="bg-emerald-500/10 text-emerald-400" />
-          <StatCard delay={3} icon={AlertCircle} label="Overdue" value={overdue} sub="Needs attention" color="bg-red-500/10 text-red-400" />
-        </div>
-      )}
+      {/* Stats - Responsive Scroll */}
+      <div className="flex overflow-x-auto pb-4 md:pb-0 md:grid md:grid-cols-4 gap-4 scrollbar-hide">
+        {isLoading ? (
+          Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-32 min-w-[240px] md:min-w-0" />)
+        ) : (
+          <>
+            <StatCard delay={0} icon={CheckSquare} label="Total Tasks" value={stats.total} sub="Assigned to your teams" color="bg-primary/10 text-primary" />
+            <StatCard delay={1} icon={Zap} label="In Progress" value={stats.inProgress} sub="Currently active" color="bg-blue-500/10 text-blue-400" />
+            <StatCard delay={2} icon={TrendingUp} label="Completion" value={stats.rate} sub="Across all projects" color="bg-emerald-500/10 text-emerald-400" />
+            <StatCard delay={3} icon={AlertCircle} label="Overdue" value={stats.overdue} sub="Needs immediate action" color="bg-red-500/10 text-red-500" />
+          </>
+        )}
+      </div>
 
-      {/* Charts Row 1 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Activity Chart */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="lg:col-span-2 glass rounded-xl p-5">
-          <h3 className="font-semibold text-foreground mb-4">Task Activity (7 days)</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={activityData}>
-              <defs>
-                <linearGradient id="colorCreated" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="colorDone" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(220 13% 18%)" />
-              <XAxis dataKey="day" tick={{ fill: "hsl(0 0% 55%)", fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "hsl(0 0% 55%)", fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <Tooltip contentStyle={{ background: "hsl(220 13% 11%)", border: "1px solid hsl(220 13% 18%)", borderRadius: "8px", color: "hsl(0 0% 95%)" }} />
-              <Area type="monotone" dataKey="created" name="Created" stroke="#22c55e" fill="url(#colorCreated)" strokeWidth={2} />
-              <Area type="monotone" dataKey="completed" name="Done" stroke="#3b82f6" fill="url(#colorDone)" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </motion.div>
-
-        {/* Status Pie */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-          className="glass rounded-xl p-5">
-          <h3 className="font-semibold text-foreground mb-4">Task Status</h3>
-          <ResponsiveContainer width="100%" height={160}>
-            <PieChart>
-              <Pie data={statusData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} dataKey="value">
-                {statusData.map((_, idx) => <Cell key={idx} fill={COLORS[idx % COLORS.length]} />)}
-              </Pie>
-              <Tooltip contentStyle={{ background: "hsl(220 13% 11%)", border: "1px solid hsl(220 13% 18%)", borderRadius: "8px", color: "hsl(0 0% 95%)" }} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="space-y-1.5 mt-2">
-            {statusData.map((item, i) => (
-              <div key={i} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full" style={{ background: COLORS[i] }} />
-                  <span className="text-muted-foreground">{item.name}</span>
-                </div>
-                <span className="font-medium text-foreground">{item.value}</span>
+      {/* Main Content Area */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        <div className="xl:col-span-2 space-y-6">
+          {/* Advanced Toolbar */}
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="relative flex-1 group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search tasks, descriptions, or tags..."
+                className="w-full bg-secondary/50 border border-border rounded-xl pl-12 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+              />
+            </div>
+            <div className="flex gap-2">
+              <select 
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              >
+                <option value="all">All Status</option>
+                <option value="pending">To Do</option>
+                <option value="in-progress">In Progress</option>
+                <option value="completed">Completed</option>
+              </select>
+              <div className="bg-secondary/50 border border-border rounded-xl p-1 flex">
+                <button 
+                  onClick={() => setView("grid")}
+                  className={cn("p-2 rounded-lg transition-all", view === "grid" ? "bg-background shadow-sm text-primary" : "text-muted-foreground hover:text-foreground")}
+                >
+                  <LayoutGrid className="w-5 h-5" />
+                </button>
+                <button 
+                  onClick={() => setView("list")}
+                  className={cn("p-2 rounded-lg transition-all", view === "list" ? "bg-background shadow-sm text-primary" : "text-muted-foreground hover:text-foreground")}
+                >
+                  <List className="w-5 h-5" />
+                </button>
               </div>
-            ))}
+            </div>
           </div>
-        </motion.div>
-      </div>
 
-      {/* Charts Row 2: Team Perf + Priority */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Team Performance */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
-          className="glass rounded-xl p-5">
-          <h3 className="font-semibold text-foreground mb-4">Team Performance</h3>
-          {teamPerf.length > 0 ? (
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={teamPerf}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(220 13% 18%)" />
-                <XAxis dataKey="name" tick={{ fill: "hsl(0 0% 55%)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "hsl(0 0% 55%)", fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip contentStyle={{ background: "hsl(220 13% 11%)", border: "1px solid hsl(220 13% 18%)", borderRadius: "8px", color: "hsl(0 0% 95%)" }} />
-                <Bar dataKey="total" name="Total" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="completed" name="Completed" fill="#22c55e" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="text-sm text-muted-foreground text-center py-8">No team data yet</p>
-          )}
-        </motion.div>
-
-        {/* Priority Breakdown */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
-          className="glass rounded-xl p-5">
-          <h3 className="font-semibold text-foreground mb-4">Tasks by Priority</h3>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={priorityData} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(220 13% 18%)" horizontal={false} />
-              <XAxis type="number" tick={{ fill: "hsl(0 0% 55%)", fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <YAxis type="category" dataKey="name" tick={{ fill: "hsl(0 0% 55%)", fontSize: 12 }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ background: "hsl(220 13% 11%)", border: "1px solid hsl(220 13% 18%)", borderRadius: "8px", color: "hsl(0 0% 95%)" }} />
-              <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                {priorityData.map((_, i) => <Cell key={i} fill={["#ef4444", "#f59e0b", "#22c55e"][i]} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </motion.div>
-      </div>
-
-      {/* Activity Timeline + Recent Tasks */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Activity Timeline */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}
-          className="glass rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Activity className="w-4 h-4 text-primary" />
-            <h3 className="font-semibold text-foreground">Activity Timeline</h3>
-          </div>
-          <div className="space-y-0">
-            {timeline.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No recent activity</p>
-            ) : (
-              timeline.map((item, i) => (
-                <Link key={item.id} href={`/dashboard/tasks/${item.id}`}>
-                  <div className="flex gap-3 py-2.5 hover:bg-secondary/50 rounded-lg px-2 transition-colors cursor-pointer group">
-                    {/* Timeline dot + line */}
-                    <div className="flex flex-col items-center">
-                      <div className={cn(
-                        "w-2.5 h-2.5 rounded-full shrink-0 mt-1.5",
-                        item.action === "completed" ? "bg-emerald-400" : item.action === "started" ? "bg-blue-400" : "bg-primary"
-                      )} />
-                      {i < timeline.length - 1 && <div className="w-px flex-1 bg-border mt-1" />}
-                    </div>
-                    <div className="flex-1 min-w-0 pb-1">
-                      <p className="text-sm text-foreground truncate group-hover:text-primary transition-colors">
-                        <span className="font-medium">{item.creator}</span>{" "}
-                        <span className="text-muted-foreground">{item.action}</span>{" "}
-                        <span className="font-medium">&quot;{item.title}&quot;</span>
-                      </p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] text-muted-foreground">{item.time}</span>
-                        <span className={cn("text-[10px] px-1.5 py-0.5 rounded border font-medium", getPriorityColor(item.priority))}>{item.priority}</span>
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              ))
-            )}
-          </div>
-        </motion.div>
-
-        {/* Recent Tasks */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
-          className="glass rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-foreground">Recent Tasks</h3>
-            <Link href="/dashboard/tasks" className="text-xs text-primary hover:underline">View all</Link>
-          </div>
-          <div className="space-y-3">
-            {isLoading
-              ? Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-12" />)
-              : recentTasks.length === 0
-              ? <p className="text-sm text-muted-foreground text-center py-4">No tasks yet.</p>
-              : recentTasks.map((task) => (
-                  <Link key={task._id} href={`/dashboard/tasks/${task._id}`}>
-                    <div className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary transition-colors cursor-pointer">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{task.title}</p>
-                        <p className="text-xs text-muted-foreground">{formatDate(task.createdAt)}</p>
-                      </div>
-                      <div className="flex items-center gap-2 ml-2 shrink-0">
-                        <span className={cn("text-xs px-2 py-0.5 rounded border font-medium", getPriorityColor(task.priority))}>
-                          {task.priority}
-                        </span>
-                        <span className={cn("text-xs px-2 py-0.5 rounded border font-medium", getStatusColor(task.status))}>
-                          {task.status}
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
+          {/* Tasks Display */}
+          <AnimatePresence mode="wait">
+            {isLoading ? (
+              <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className={cn("grid gap-4", view === "grid" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1")}>
+                {Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-48" />)}
+              </motion.div>
+            ) : filteredTasks.length > 0 ? (
+              <motion.div 
+                key={view} 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className={cn("grid gap-4", view === "grid" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1")}
+              >
+                {filteredTasks.map((task) => (
+                  <TaskCard key={task._id} task={task} view={view} />
                 ))}
-          </div>
-        </motion.div>
+              </motion.div>
+            ) : (
+              <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-20 glass rounded-2xl border-dashed border-2">
+                <p className="text-muted-foreground font-medium">No tasks found matching your criteria</p>
+                <button onClick={() => { setSearch(""); setFilter("all"); }} className="text-primary text-sm mt-2 hover:underline">Clear all filters</button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Sidebar Widgets */}
+        <div className="space-y-8">
+          {/* Progress Widget */}
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="glass rounded-2xl p-6">
+            <h3 className="font-bold text-lg mb-6 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-emerald-400" /> Weekly Progress
+            </h3>
+            <div className="space-y-6">
+              <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full border-4 border-emerald-400/20 border-t-emerald-400 flex items-center justify-center font-bold">
+                    {stats.rate}%
+                  </div>
+                  <div>
+                    <p className="font-bold">Team Productivity</p>
+                    <p className="text-xs text-muted-foreground">+5% from last week</p>
+                  </div>
+                </div>
+              </div>
+              <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                <motion.div 
+                  initial={{ width: 0 }} 
+                  animate={{ width: `${stats.rate}%` }} 
+                  className="h-full bg-emerald-400" 
+                />
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Activity Widget */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ delay: 0.2 }}
+            className="glass rounded-2xl p-6"
+          >
+            <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+              <Activity className="w-5 h-5 text-primary" /> Recent Activity
+            </h3>
+            <div className="space-y-4">
+              {tasks.slice(0, 5).map((task, i) => (
+                <div key={task._id} className="flex gap-4 group">
+                  <div className="flex flex-col items-center">
+                    <div className="w-2 h-2 rounded-full bg-primary" />
+                    {i < 4 && <div className="w-px flex-1 bg-border my-1" />}
+                  </div>
+                  <div className="pb-4">
+                    <p className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors cursor-pointer">
+                      {task.title}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">{formatRelativeTime(task.updatedAt || task.createdAt)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        </div>
       </div>
+
+      {isModalOpen && <CreateTaskModal onClose={() => setIsModalOpen(false)} />}
     </div>
   );
 }

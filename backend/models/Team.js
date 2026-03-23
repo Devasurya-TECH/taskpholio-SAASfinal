@@ -1,13 +1,35 @@
 const mongoose = require('mongoose');
 
-const teamSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true, trim: true },
-    description: { type: String, default: '' },
-    manager: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+const teamSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    enum: ['Technical Team', 'Cybersecurity Team', 'Social Media Team'],
+    unique: true
   },
-  { timestamps: true }
-);
+  description: String,
+  color: {
+    type: String,
+    default: '#3B82F6'
+  },
+  icon: String,
+  members: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  lead: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  stats: {
+    totalTasks: { type: Number, default: 0 },
+    completedTasks: { type: Number, default: 0 },
+    activeTasks: { type: Number, default: 0 }
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  }
+}, { timestamps: true });
 
 module.exports = mongoose.model('Team', teamSchema);

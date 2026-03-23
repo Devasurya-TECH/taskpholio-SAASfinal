@@ -8,7 +8,20 @@ const {
   emailLimiter 
 } = require('../middleware/rateLimiter');
 const { checkAccountLockout } = require('../middleware/accountLockout');
-const { getPublicTeams, register, login, getMe, getAllUsers, updateUser, deleteUser, uploadAvatar } = require('../controllers/authController');
+const { 
+  getPublicTeams, 
+  register, 
+  login, 
+  getMe, 
+  logout,
+  verifyEmail, 
+  forgotPassword, 
+  resetPassword, 
+  updatePassword,
+  getAllUsers, 
+  updateUser, 
+  deleteUser 
+} = require('../controllers/authController');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 
 // Public routes
@@ -26,8 +39,16 @@ router.post('/login',
   authLimiter,
   login
 );
+
+// Email Verification & Password Recovery
+router.get('/verify-email/:token', verifyEmail);
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password/:token', resetPassword);
+
+// Protected routes
 router.get('/me', requireAuth, getMe);
-router.patch('/profile/avatar', requireAuth, upload.single('avatar'), uploadAvatar);
+router.post('/logout', requireAuth, logout);
+router.post('/update-password', requireAuth, updatePassword);
 
 // Admin user management
 router.get('/users', requireAuth, requirePermission('manage_users'), getAllUsers);

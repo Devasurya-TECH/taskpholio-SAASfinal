@@ -1,342 +1,329 @@
 const Task = require('../models/Task');
 const User = require('../models/User');
-const ProgressUpdate = require('../models/ProgressUpdate');
 const Notification = require('../models/Notification');
-const { success, error } = require('../utils/apiResponse');
-const { emailQueue } = require('../services/queueService');
-const { logAudit } = require('../utils/auditLogger');
-const { emitToUsers, emitToUser } = require('../services/socketService');
-const Joi = require('joi');
+const ActivityLog = require('../models/ActivityLog');
+const { emitToUser, emitToUsers } = require('../services/socketService');
 
-const taskSchema = Joi.object({
-  title: Joi.string().min(1).max(200).required(),
-  description: Joi.string().allow('').default(''),
-  assignedTo: Joi.array().items(Joi.string()).default([]),
-  priority: Joi.string().valid('Low', 'Medium', 'High').default('Medium'),
-  status: Joi.string().valid('Not Started', 'In Progress', 'Completed').default('Not Started'),
-  deadline: Joi.date().iso().allow(null).default(null),
-  team: Joi.string().allow('', null).default(null),
-  visibility: Joi.string().valid('public', 'private').default('private'),
-});
-
-// GET /tasks - public tasks or private tasks where user is in visibleTo
-const getTasks = async (req, res, next) => {
+// Create Task
+exports.createTask = async (req, res) => {
   try {
-    const { status, priority, search, visibility } = req.query;
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
-    const skip = (page - 1) * limit;
+    const {
+      title,
+      description,
+      assignedTo,
+      team,
+      priority,
+      dueDate,
+      estimatedHours,
+      tags,
+      subtasks,
+      attachments
+    } = req.body;
 
-    const filter = { isDeleted: { $ne: true } };
-    
-    // CEO/CTO can see all tasks, others are restricted by visibility
-    if (req.user.role !== 'CEO' && req.user.role !== 'CTO') {
-      if (visibility) {
-        filter.visibility = visibility;
-        filter.visibleTo = req.user._id;
-      } else {
-        filter.$or = [{ visibility: 'public' }, { visibleTo: req.user._id }];
-      }
-    } else if (visibility) {
-      filter.visibility = visibility;
+    // Validate
+    if (!title || !description || !assignedTo || !team) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tactical Failure: Missing required intelligence fields'
+      });
     }
-    if (status) filter.status = status;
-    if (priority) filter.priority = priority;
-    if (search) filter.title = { $regex: search, $options: 'i' };
-
-    const total = await Task.countDocuments(filter);
-    const tasks = await Task.find(filter)
-      .populate('creator', 'name avatar role')
-      .populate('assignedTo', 'name avatar role')
-      .populate('acknowledgements.user', 'name avatar')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    return success(res, { 
-      tasks, 
-      pagination: { total, page, totalPages: Math.ceil(total / limit), limit } 
-    });
-  } catch (err) {
-    next(err);
-  }
-};
-
-// GET /tasks/:id
-const getTask = async (req, res, next) => {
-  try {
-    const task = await Task.findById(req.params.id)
-      .populate('creator', 'name avatar role')
-      .populate('assignedTo', 'name avatar role')
-      .populate('visibleTo', 'name avatar role')
-      .populate('acknowledgements.user', 'name avatar');
-
-    if (!task || task.isDeleted === true) {
-      return error(res, 'Task not found', 404);
-    }
-
-    const updates = await ProgressUpdate.find({ task: task._id })
-      .populate('user', 'name avatar')
-      .sort({ createdAt: -1 });
-
-    return success(res, { task, progressUpdates: updates });
-  } catch (err) {
-    next(err);
-  }
-};
-
-// POST /tasks — CEO/CTO only
-const createTask = async (req, res, next) => {
-  try {
-    const { error: validationError, value } = taskSchema.validate(req.body);
-    if (validationError) return error(res, validationError.details[0].message, 400);
-
-    const assignedTo = value.assignedTo || [];
-    // Always store just creator and assigned users in visibleTo
-    const visibleTo = [...new Set([req.user._id.toString(), ...assignedTo])];
 
     const task = await Task.create({
-      ...value,
-      creator: req.user._id,
-      assignedTo,
-      visibleTo,
-    });
-
-    // Send notifications to assignees
-    const notifPromises = assignedTo
-      .filter((uid) => uid !== req.user._id.toString())
-      .map((uid) =>
-        Notification.create({
-          user: uid,
-          type: 'TASK_ASSIGNED',
-          message: `You have been assigned a new task: "${task.title}"`,
-          relatedTask: task._id,
-        })
-      );
-    await Promise.all(notifPromises);
-
-    const populated = await task.populate([
-      { path: 'creator', select: 'name avatar role' },
-      { path: 'assignedTo', select: 'name avatar role' },
-    ]);
-
-    // Audit Log
-    await logAudit('CREATE', 'Task', task._id, req.user._id, { newState: task.toObject() });
-
-    // Email Queue for assignees
-    for (const assigneeId of assignedTo) {
-      if (assigneeId.toString() !== req.user._id.toString()) {
-        const assignee = await User.findById(assigneeId).select('email name');
-        if (assignee && assignee.email && emailQueue) {
-          await emailQueue.add('taskAssignmentEmail', {
-            to: assignee.email,
-            subject: `New Task Assigned: ${task.title}`,
-            type: 'TASK_ASSIGNED',
-            context: {
-              taskTitle: task.title,
-              assignerName: req.user.name,
-              taskDescription: task.description,
-              taskLink: `${process.env.FRONTEND_URL}/tasks/${task._id}`
-            }
-          });
-        }
-      }
-    }
-
-    // Emit live task creation event
-    emitToUsers(visibleTo, 'NEW_TASK', populated);
-
-    return success(res, { task: populated }, 'Task created successfully', 201);
-  } catch (err) {
-    next(err);
-  }
-};
-
-// PATCH /tasks/:id
-const updateTask = async (req, res, next) => {
-  try {
-    const allowedUpdates = ['title', 'description', 'priority', 'status', 'deadline', 'team', 'visibility'];
-    const updates = {};
-    allowedUpdates.forEach((field) => {
-      if (req.body[field] !== undefined) updates[field] = req.body[field];
-    });
-
-    const task = req.task; // From middleware
-    const oldState = task.toObject();
-
-    // If reassigning, update visibleTo dynamically to maintain private access
-    if (req.body.assignedTo) {
-      // Normalize to IDs (handles populated objects or just ID strings)
-      const assignedToIds = req.body.assignedTo.map(id => typeof id === 'object' ? id._id : id);
-      updates.assignedTo = assignedToIds;
-      updates.visibleTo = [...new Set([task.creator.toString(), ...assignedToIds])];
-    }
-
-    // Handle visibility update if provided
-    if (req.body.visibility && req.body.visibility !== task.visibility) {
-      updates.visibility = req.body.visibility;
-      // If visibility changes to private, ensure visibleTo is updated
-      if (updates.visibility === 'private' && !req.body.visibleTo) {
-        updates.visibleTo = [...new Set([task.creator.toString(), ...(updates.assignedTo || task.assignedTo).map(id => id.toString())])];
-      }
-    }
-    // If visibleTo is explicitly provided, use it
-    if (req.body.visibleTo) {
-      updates.visibleTo = req.body.visibleTo;
-    }
-
-    const updatedTask = await Task.findByIdAndUpdate(req.params.id, updates, {
-      new: true,
-      runValidators: true,
-    })
-      .populate('creator', 'name avatar role')
-      .populate('assignedTo', 'name avatar role');
-
-    if (!updatedTask) return error(res, 'Task not found', 404);
-
-    // Audit Log
-    await logAudit('UPDATE', 'Task', updatedTask._id, req.user._id, { 
-      oldState, 
-      newState: updatedTask.toObject(),
-      details: 'Task fields updated'
-    });
-
-    // Emit live task update
-    emitToUsers(updatedTask.visibleTo, 'TASK_UPDATED', updatedTask);
-
-    return success(res, { task: updatedTask }, 'Task updated successfully');
-  } catch (err) {
-    next(err);
-  }
-};
-
-// DELETE /tasks/:id
-const deleteTask = async (req, res, next) => {
-  try {
-    if (req.task.creator.toString() !== req.user._id.toString()) {
-      return error(res, 'Only the task creator can delete this task.', 403);
-    }
-    await Task.findByIdAndDelete(req.params.id);
-    await ProgressUpdate.deleteMany({ task: req.params.id });
-
-    // Broadcast deletion
-    emitToUsers(req.task.visibleTo, 'TASK_DELETED', req.params.id);
-
-    return success(res, {}, 'Task deleted successfully');
-  } catch (err) {
-    next(err);
-  }
-};
-
-// POST /tasks/:id/progress
-const addProgressUpdate = async (req, res, next) => {
-  try {
-    const { description, progressIncrement } = req.body;
-
-    if (!description) return error(res, 'Description is required.', 400);
-    const increment = Number(progressIncrement);
-    if (isNaN(increment) || increment < 0) return error(res, 'Progress increment must be a non-negative number.', 400);
-
-    const task = req.task;
-    const newProgress = Math.min(100, task.progress + increment);
-
-    const attachments = (req.files || []).map((file) => ({
-      fileUrl: file.path,
-      fileType: file.mimetype,
-    }));
-
-    const update = await ProgressUpdate.create({
-      task: task._id,
-      user: req.user._id,
+      title,
       description,
-      progressIncrement: increment,
-      attachments,
+      assignedTo,
+      team,
+      priority: priority || 'medium',
+      dueDate,
+      estimatedHours,
+      tags: tags || [],
+      subtasks: subtasks || [],
+      attachments: attachments || [],
+      createdBy: req.user._id,
+      status: 'pending',
+      progress: 0,
+      watchers: [req.user._id, assignedTo],
+      activity: [{
+        action: 'created',
+        user: req.user._id,
+        details: 'Initial mission briefing deployed',
+        timestamp: new Date()
+      }]
     });
 
-    // Update task progress + status
-    const statusUpdate = newProgress >= 100 ? 'Completed' : newProgress > 0 ? 'In Progress' : task.status;
-    await Task.findByIdAndUpdate(task._id, { progress: newProgress, status: statusUpdate });
+    const populatedTask = await Task.findById(task._id)
+      .populate('assignedTo', 'name email avatar role')
+      .populate('createdBy', 'name email avatar')
+      .populate('team', 'name color');
 
-    // Notify task creator
-    if (task.creator.toString() !== req.user._id.toString()) {
-      await Notification.create({
-        user: task.creator,
-        type: 'PROGRESS_UPDATE',
-        message: `${req.user.name} added a progress update on task "${task.title}"`,
-        relatedTask: task._id,
-      });
-    }
+    // Notify assignee
+    await Notification.create({
+      recipient: assignedTo,
+      sender: req.user._id,
+      type: 'TASK_ASSIGNED',
+      title: 'New Mission Assigned',
+      message: `You have been assigned a new briefing: ${title}`,
+      relatedTask: task._id
+    });
 
-    const populated = await update.populate('user', 'name avatar');
+    // Log tactical activity
+    await ActivityLog.create({
+      user: req.user._id,
+      action: 'TASK_CREATED',
+      description: `Target acquired: ${title}`,
+      relatedModel: 'Task',
+      relatedId: task._id
+    });
+
+    // Emit real-time intelligence
+    emitToUser(assignedTo.toString(), 'NEW_TASK', populatedTask);
     
-    // Broadcast progress update
-    emitToUsers(task.visibleTo, 'PROGRESS_UPDATE', { task: task._id, update: populated, newProgress });
-
-    return success(res, { progressUpdate: populated, newProgress }, 'Progress update added', 201);
-  } catch (err) {
-    next(err);
+    res.status(201).json({
+      success: true,
+      data: { task: populatedTask },
+      message: 'Mission deployed successfully'
+    });
+  } catch (error) {
+    console.error('Error creating task:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// POST /tasks/:id/acknowledge
-const acknowledgeTask = async (req, res, next) => {
+// Get All Tasks
+exports.getTasks = async (req, res) => {
   try {
-    const { status } = req.body; // 'seen' or 'accepted'
-    if (!['seen', 'accepted'].includes(status)) {
-      return error(res, 'Status must be "seen" or "accepted".', 400);
+    const { status, priority, team, assignedTo, search, sortBy, page = 1, limit = 20 } = req.query;
+    const userId = req.user._id;
+    const userRole = req.user.role;
+
+    let query = { isArchived: false };
+
+    // Role-based filtering
+    if (userRole === 'CEO' || userRole === 'CTO') {
+      if (team) query.team = team;
+      if (assignedTo) query.assignedTo = assignedTo;
+    } else {
+      query.assignedTo = userId;
     }
 
-    const task = req.task;
-    // Check if user already acknowledged with this or higher status
-    const existing = task.acknowledgements.find(
-      (a) => a.user.toString() === req.user._id.toString()
-    );
+    if (status) query.status = status;
+    if (priority) query.priority = priority;
+    if (search) {
+      query.$text = { $search: search };
+    }
 
-    if (existing) {
-      // Upgrade from 'seen' to 'accepted' is allowed, but not downgrade
-      if (existing.status === 'accepted' && status === 'seen') {
-        return error(res, 'Already accepted.', 400);
+    let sort = { createdAt: -1 };
+    if (sortBy === 'dueDate') sort = { dueDate: 1 };
+    if (sortBy === 'priority') sort = { priority: -1 };
+    if (sortBy === 'progress') sort = { progress: -1 };
+
+    const skip = (page - 1) * limit;
+
+    const tasks = await Task.find(query)
+      .populate('assignedTo', 'name email avatar role')
+      .populate('createdBy', 'name email avatar')
+      .populate('team', 'name color')
+      .sort(sort)
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Task.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: { tasks },
+      pagination: {
+        total,
+        page: parseInt(page),
+        pages: Math.ceil(total / limit)
       }
-      existing.status = status;
-      existing.at = new Date();
-    } else {
-      task.acknowledgements.push({
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Update Task
+exports.updateTask = async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id);
+    if (!task) return res.status(404).json({ success: false, message: 'Objective not found' });
+
+    const isAdmin = req.user.role === 'CEO' || req.user.role === 'CTO';
+    const isAssigned = task.assignedTo.toString() === req.user._id.toString();
+
+    if (!isAdmin && !isAssigned) {
+      return res.status(403).json({ success: false, message: 'Access Denied: Priority override required' });
+    }
+
+    const updates = req.body;
+    const oldStatus = task.status;
+
+    Object.keys(updates).forEach(key => {
+      if (updates[key] !== undefined) {
+        task[key] = updates[key];
+      }
+    });
+
+    if (updates.status && updates.status !== oldStatus) {
+      task.activity.push({
+        action: 'status_changed',
         user: req.user._id,
-        status,
-        at: new Date(),
+        details: `Status shifted from ${oldStatus} to ${updates.status}`,
+        timestamp: new Date()
       });
+
+      if (updates.status === 'completed') {
+        task.completedAt = new Date();
+        task.progress = 100;
+      }
+
+      if (!isAdmin && task.createdBy.toString() !== req.user._id.toString()) {
+        await Notification.create({
+          recipient: task.createdBy,
+          sender: req.user._id,
+          type: 'TASK_UPDATED',
+          title: 'Mission Status Updated',
+          message: `${task.title} has reached ${updates.status} phase`,
+          relatedTask: task._id
+        });
+        emitToUser(task.createdBy.toString(), 'NOTIFICATION', { title: 'Intelligence Update', message: `${task.title}: ${updates.status}` });
+      }
     }
 
     await task.save();
 
-    const populated = await task.populate('acknowledgements.user', 'name avatar');
-    return success(res, { acknowledgements: populated.acknowledgements }, 'Task acknowledged');
-  } catch (err) {
-    next(err);
+    const updatedTask = await Task.findById(task._id)
+      .populate('assignedTo', 'name email avatar role')
+      .populate('createdBy', 'name email avatar')
+      .populate('team', 'name color');
+
+    // Notify watchers via socket
+    task.watchers.forEach(watcherId => {
+      emitToUser(watcherId.toString(), 'TASK_UPDATED', { taskId: task._id, updates: updatedTask });
+    });
+
+    res.json({
+      success: true,
+      data: { task: updatedTask },
+      message: 'Intelligence updated'
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// POST /tasks/:id/attachments
-const addAttachment = async (req, res, next) => {
+// Add Comment
+exports.addComment = async (req, res) => {
   try {
-    if (!req.files || req.files.length === 0) return error(res, 'No files uploaded.', 400);
+    const { text, mentions } = req.body;
+    const task = await Task.findById(req.params.id);
+    if (!task) return res.status(404).json({ success: false, message: 'Intelligence sink not found' });
 
-    const attachments = req.files.map((file) => ({
-      fileUrl: file.path,
-      fileType: file.mimetype,
-      uploadedBy: req.user._id,
-    }));
+    task.comments.push({
+      user: req.user._id,
+      text,
+      mentions: mentions || [],
+      createdAt: new Date()
+    });
 
-    const task = await Task.findByIdAndUpdate(
-      req.params.id,
-      { $push: { attachments: { $each: attachments } } },
-      { new: true }
-    );
+    task.activity.push({
+      action: 'commented',
+      user: req.user._id,
+      details: 'Tactical comms added',
+      timestamp: new Date()
+    });
 
-    return success(res, { attachments: task.attachments }, 'Attachments uploaded');
-  } catch (err) {
-    next(err);
+    await task.save();
+
+    const updatedTask = await Task.findById(task._id).populate('comments.user', 'name avatar');
+
+    if (mentions && mentions.length > 0) {
+      mentions.forEach(async (mId) => {
+        await Notification.create({
+          recipient: mId,
+          sender: req.user._id,
+          type: 'TASK_MENTION',
+          title: 'Direct Mention',
+          message: `${req.user.name} tagged you in mission comms`,
+          relatedTask: task._id
+        });
+      });
+    }
+
+    task.watchers.forEach(wId => {
+      emitToUser(wId.toString(), 'TASK_COMMENT', { taskId: task._id, comment: task.comments[task.comments.length - 1] });
+    });
+
+    res.json({
+      success: true,
+      data: task.comments
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-module.exports = { getTasks, getTask, createTask, updateTask, deleteTask, addProgressUpdate, acknowledgeTask, addAttachment };
+// Subtask Management
+exports.addSubtask = async (req, res) => {
+  try {
+    const { title } = req.body;
+    const task = await Task.findById(req.params.id);
+    if (!task) return res.status(404).json({ success: false, message: 'Objective not found' });
+
+    task.subtasks.push({ title, completed: false });
+    await task.save();
+
+    res.json({ success: true, data: task.subtasks });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.toggleSubtask = async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id);
+    if (!task) return res.status(404).json({ success: false, message: 'Objective not found' });
+
+    const subtask = task.subtasks.id(req.params.subtaskId);
+    if (!subtask) return res.status(404).json({ success: false, message: 'Sub-objective not found' });
+
+    subtask.completed = !subtask.completed;
+    
+    // Auto-calculate progress
+    const completedCount = task.subtasks.filter(s => s.completed).length;
+    task.progress = Math.round((completedCount / task.subtasks.length) * 100);
+
+    await task.save();
+    res.json({ success: true, data: { subtasks: task.subtasks, progress: task.progress } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Archive Task
+exports.archiveTask = async (req, res) => {
+  try {
+    await Task.findByIdAndUpdate(req.params.id, { isArchived: true });
+    res.json({ success: true, message: 'Mission archived and redacted' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getTask = async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id)
+      .populate('assignedTo', 'name email avatar role')
+      .populate('createdBy', 'name email avatar')
+      .populate('team', 'name color description')
+      .populate('comments.user', 'name avatar')
+      .populate('watchers', 'name email avatar');
+
+    if (!task) return res.status(404).json({ success: false, message: 'Objective not found' });
+
+    res.json({ success: true, data: { task } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

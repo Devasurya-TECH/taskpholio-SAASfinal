@@ -14,11 +14,12 @@ interface AuthState {
   logout: () => void;
   fetchMe: () => Promise<void>;
   setAuth: (user: User, token: string) => void;
+  updateProfile: (updates: Partial<User>) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       token: null,
       isLoading: false,
@@ -27,9 +28,6 @@ export const useAuthStore = create<AuthState>()(
       login: async (email, password) => {
         set({ isLoading: true });
         try {
-          const API = process.env.NEXT_PUBLIC_API_URL;
-          console.log("LOGIN ATTEMPT TO:", `${api.defaults.baseURL}auth/login`);
-          
           const res = await api.post("auth/login", { email, password });
           const token = res.data.data.token;
           const user = res.data.data.user;
@@ -38,7 +36,6 @@ export const useAuthStore = create<AuthState>()(
           set({ user, token, isAuthenticated: true, isLoading: false });
         } catch (err: any) {
           set({ isLoading: false });
-          console.error("LOGIN ERROR:", err.response?.data || err.message);
           throw err;
         }
       },
@@ -46,9 +43,6 @@ export const useAuthStore = create<AuthState>()(
       register: async (name, email, password, role, team) => {
         set({ isLoading: true });
         try {
-          const API = process.env.NEXT_PUBLIC_API_URL;
-          console.log("REGISTER URL:", `${API}/auth/register`);
-          
           const payload = team ? { name, email, password, role, team } : { name, email, password, role };
           const res = await api.post("auth/register", payload);
           const token = res.data.data.token;
@@ -58,7 +52,6 @@ export const useAuthStore = create<AuthState>()(
           set({ user, token, isAuthenticated: true, isLoading: false });
         } catch (err: any) {
           set({ isLoading: false });
-          console.error("REGISTER ERROR:", err.response?.data || err.message);
           throw err;
         }
       },
@@ -71,13 +64,28 @@ export const useAuthStore = create<AuthState>()(
       fetchMe: async () => {
         try {
           const res = await api.get("auth/me");
-          set({ user: res.data.data.user, isAuthenticated: true });
+          const newUser = res.data.data.user;
+          const currentUser = get().user;
+          
+          if (JSON.stringify(currentUser) !== JSON.stringify(newUser)) {
+            set({ user: newUser, isAuthenticated: true });
+          }
         } catch {
           set({ user: null, token: null, isAuthenticated: false });
         }
       },
 
       setAuth: (user, token) => set({ user, token, isAuthenticated: true }),
+
+      updateProfile: async (updates) => {
+        try {
+          const res = await api.patch("users/profile", updates);
+          set({ user: res.data.data.user });
+        } catch (err) {
+          console.error("Profile update failed:", err);
+          throw err;
+        }
+      }
     }),
     {
       name: "taskpholio-auth",

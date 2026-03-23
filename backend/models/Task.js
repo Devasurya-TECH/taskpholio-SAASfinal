@@ -12,50 +12,163 @@ const acknowledgementSchema = new mongoose.Schema({
   at: { type: Date, default: Date.now },
 });
 
-const taskSchema = new mongoose.Schema(
-  {
-    title: { type: String, required: true, trim: true },
-    description: { type: String, default: '' },
-    creator: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    assignedTo: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    visibleTo: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    visibility: {
-      type: String,
-      enum: ['public', 'private'],
-      default: 'private',
-    },
-    priority: {
-      type: String,
-      enum: ['Low', 'Medium', 'High'],
-      default: 'Medium',
-    },
-    status: {
-      type: String,
-      enum: ['Not Started', 'In Progress', 'Completed'],
-      default: 'Not Started',
-    },
-    isDeleted: { type: Boolean, default: false },
-    deadline: { type: Date },
-    attachments: [attachmentSchema],
-    acknowledgements: [acknowledgementSchema],
-    progress: { type: Number, default: 0, min: 0, max: 100 },
-    isCompleted: { type: Boolean, default: false },
-    team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+const taskSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: [true, 'Task title is required'],
+    trim: true,
+    maxLength: [200, 'Title cannot exceed 200 characters']
   },
-  { timestamps: true }
-);
+  description: {
+    type: String,
+    required: [true, 'Description is required'],
+    maxLength: [5000, 'Description too long']
+  },
+  assignedTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: [true, 'Task must be assigned'],
+    index: true
+  },
+  team: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Team',
+    required: true,
+    index: true
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'in_progress', 'review', 'completed', 'blocked'],
+    default: 'pending',
+    index: true
+  },
+  priority: {
+    type: String,
+    enum: ['low', 'medium', 'high', 'urgent'],
+    default: 'medium',
+    index: true
+  },
+  progress: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: 0
+  },
+  dueDate: {
+    type: Date,
+    index: true
+  },
+  startDate: Date,
+  completedAt: Date,
+  estimatedHours: Number,
+  actualHours: Number,
+  
+  // Attachments
+  attachments: [{
+    fileName: String,
+    fileUrl: String,
+    fileType: String,
+    fileSize: Number,
+    publicId: String,
+    uploadedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  
+  // Comments
+  comments: [{
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    text: String,
+    mentions: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }],
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  
+  // Subtasks
+  subtasks: [{
+    title: String,
+    completed: { type: Boolean, default: false },
+    assignedTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  }],
+  
+  // Tags
+  tags: [String],
+  
+  // Watchers (users following this task)
+  watchers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  
+  // Activity Log
+  activity: [{
+    action: String, // 'created', 'updated', 'commented', 'status_changed'
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    details: String,
+    timestamp: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  
+  isArchived: {
+    type: Boolean,
+    default: false
+  }
+}, { 
+  timestamps: true 
+});
 
-taskSchema.index({ visibleTo: 1 });
-taskSchema.index({ assignedTo: 1 });
-taskSchema.index({ creator: 1 });
-taskSchema.index({ status: 1 });
-taskSchema.index({ deadline: 1 });
-taskSchema.index({ createdAt: -1 });
+// Indexes for performance
+taskSchema.index({ assignedTo: 1, status: 1, dueDate: 1 });
+taskSchema.index({ team: 1, status: 1 });
+taskSchema.index({ createdBy: 1, createdAt: -1 });
+taskSchema.index({ tags: 1 });
+taskSchema.index({ title: 'text', description: 'text' }); // Text search
 
-taskSchema.pre('save', function (next) {
-  this.isCompleted = this.progress >= 100;
-  if (this.progress > 100) this.progress = 100;
-  next();
+// Update team stats when task changes
+taskSchema.post('save', async function() {
+  const Team = mongoose.model('Team');
+  const Task = mongoose.model('Task');
+  
+  const stats = await Task.aggregate([
+    { $match: { team: this.team } },
+    { $group: {
+      _id: null,
+      totalTasks: { $sum: 1 },
+      completedTasks: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+      activeTasks: { $sum: { $cond: [{ $ne: ['$status', 'completed'] }, 1, 0] } }
+    }}
+  ]);
+  
+  if (stats.length > 0) {
+    await Team.findByIdAndUpdate(this.team, { stats: stats[0] });
+  }
 });
 
 module.exports = mongoose.model('Task', taskSchema);

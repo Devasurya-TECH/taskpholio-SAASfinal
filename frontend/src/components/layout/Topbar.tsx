@@ -9,6 +9,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useAuthStore } from "@/store/authStore";
 import { useUIStore } from "@/store/uiStore";
+import NotificationCenter from "../notifications/NotificationCenter";
 
 interface Props {
   title: string;
@@ -17,25 +18,6 @@ interface Props {
 export default function Topbar({ title }: Props) {
   const { user } = useAuthStore();
   const { theme, toggleTheme } = useUIStore();
-  const [unread, setUnread] = useState(0);
-  const { socket } = useSocket();
-
-  useEffect(() => {
-    api.get("notifications").then((res) => {
-      setUnread(res.data.data.unreadCount || 0);
-    }).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!socket) return;
-    socket.on("NEW_NOTIFICATION", (n: any) => {
-      setUnread((prev) => prev + 1);
-      toast(n.message, { icon: "🔔" });
-    });
-    return () => {
-      socket.off("NEW_NOTIFICATION");
-    };
-  }, [socket]);
 
   return (
     <header className="h-14 flex items-center justify-between px-6 border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-20">
@@ -57,18 +39,7 @@ export default function Topbar({ title }: Props) {
         </button>
 
         {/* Notifications */}
-        <a href="/dashboard/notifications" className="relative p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground">
-          <Bell className="w-4 h-4" />
-          {unread > 0 && (
-            <motion.span
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center"
-            >
-              {unread > 9 ? "9+" : unread}
-            </motion.span>
-          )}
-        </a>
+        <NotificationCenter />
 
         {/* Avatar */}
         {user && (

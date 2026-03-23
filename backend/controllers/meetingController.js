@@ -1,157 +1,197 @@
 const Meeting = require('../models/Meeting');
-const Team = require('../models/Team');
-const User = require('../models/User');
-const Notification = require('../models/Notification'); // Kept as it's not explicitly removed and used later
-const { success, error } = require('../utils/apiResponse');
-const { logAudit } = require('../utils/auditLogger');
-const { emailQueue } = require('../services/queueService');
-const { emitToUsers } = require('../services/socketService');
+const Notification = require('../models/Notification');
+const { emitToUser, emitToUsers } = require('../services/socketService');
 
-const getMeetings = async (req, res, next) => {
+// Create Meeting
+exports.createMeeting = async (req, res) => {
   try {
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
-    const skip = (page - 1) * limit;
+    const {
+      title,
+      description,
+      attendees,
+      teams,
+      startTime,
+      endTime,
+      meetingLink,
+      location,
+      type,
+      agenda
+    } = req.body;
 
-    const filter = { isDeleted: { $ne: true }, participants: req.user._id };
-    const total = await Meeting.countDocuments(filter);
-
-    const meetings = await Meeting.find(filter)
-      .populate('createdBy', 'name avatar role')
-      .populate('participants', 'name avatar role')
-      .sort({ dateTime: 1 })
-      .skip(skip)
-      .limit(limit);
-
-    return success(res, { 
-      meetings, 
-      pagination: { total, page, totalPages: Math.ceil(total / limit), limit } 
-    });
-  } catch (err) {
-    next(err);
-  }
-};
-
-const createMeeting = async (req, res, next) => {
-  try {
-    const { title, description, participants, dateTime, notes, meetingLink, reminders, reminderTime, status } = req.body;
-    if (!title || !dateTime) return error(res, 'Title and date/time are required.', 400);
-
-    const allParticipants = [...new Set([req.user._id.toString(), ...(participants || [])])];
+    if (!title || !startTime || !endTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tactical Failure: Missing critical briefing parameters'
+      });
+    }
 
     const meeting = await Meeting.create({
       title,
-      description: description || '',
-      createdBy: req.user._id,
-      participants: allParticipants,
-      dateTime,
-      notes,
+      description,
+      scheduledBy: req.user._id,
+      attendees: (attendees || []).map(userId => ({ user: userId, status: 'pending' })),
+      teams: teams || [],
+      startTime: new Date(startTime),
+      endTime: new Date(endTime),
       meetingLink,
-      reminders,
-      reminderTime,
-      status: status || 'scheduled',
-      isDeleted: false, // Added for soft delete
+      location,
+      type: type || 'online',
+      agenda: agenda || [],
+      status: 'scheduled'
     });
 
-    // Notify participants
-    const notifPromises = allParticipants
-      .filter((uid) => uid !== req.user._id.toString())
-      .map((uid) =>
-        Notification.create({
-          user: uid,
+    const populatedMeeting = await Meeting.findById(meeting._id)
+      .populate('scheduledBy', 'name email avatar')
+      .populate('attendees.user', 'name email avatar')
+      .populate('teams', 'name color');
+
+    // Create notifications for attendees
+    if (attendees && attendees.length > 0) {
+      for (const aId of attendees) {
+        if (aId.toString() === req.user._id.toString()) continue;
+        await Notification.create({
+          recipient: aId,
+          sender: req.user._id,
           type: 'MEETING_SCHEDULED',
-          message: `You have been invited to a meeting: "${title}"`,
-          relatedMeeting: meeting._id,
-        })
-      );
-    await Promise.all(notifPromises);
-
-    const populated = await meeting.populate([
-      { path: 'createdBy', select: 'name avatar role' },
-      { path: 'participants', select: 'name avatar role email' }, // Added email
-    ]);
-
-    await logAudit('CREATE', 'Meeting', meeting._id, req.user._id, { newState: meeting.toObject() });
-
-    // Send emails via Queue
-    for (const participant of populated.participants) {
-      if (participant._id.toString() !== req.user._id.toString() && participant.email && emailQueue) {
-        await emailQueue.add('meetingInviteEmail', {
-          to: participant.email,
-          subject: `Meeting Scheduled: ${meeting.title}`,
-          type: 'MEETING_INVITE',
-          context: {
-            meetingTitle: meeting.title,
-            date: new Date(meeting.dateTime).toLocaleString(),
-            link: meeting.meetingLink
-          }
+          title: 'Briefing Scheduled',
+          message: `Mission objective briefing scheduled: ${title}`,
+          relatedMeeting: meeting._id
         });
+        emitToUser(aId.toString(), 'MEETING_ALERT', populatedMeeting);
       }
     }
 
-    // Live meeting broadcast
-    emitToUsers(allParticipants, 'NEW_MEETING', populated);
-
-    return success(res, { meeting: populated }, 'Meeting scheduled successfully', 201);
-  } catch (err) {
-    next(err);
+    res.status(201).json({
+      success: true,
+      data: populatedMeeting
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-const updateMeeting = async (req, res, next) => {
+// Get All Meetings
+exports.getMeetings = async (req, res) => {
   try {
-    const meeting = await Meeting.findOne({ _id: req.params.id, isDeleted: { $ne: true } }); // Check for not deleted
-    if (!meeting) return error(res, 'Meeting not found.', 404);
-    if (meeting.createdBy.toString() !== req.user._id.toString()) {
-      return error(res, 'Only the meeting creator can update it.', 403);
+    const userId = req.user._id;
+    const { status, upcoming, page = 1, limit = 20 } = req.query;
+
+    let query = {
+      $or: [
+        { scheduledBy: userId },
+        { 'attendees.user': userId },
+        { teams: req.user.team }
+      ]
+    };
+
+    if (status) query.status = status;
+    if (upcoming === 'true') {
+      query.startTime = { $gte: new Date() };
     }
 
-    const oldState = meeting.toObject(); // For audit logging
+    const skip = (page - 1) * limit;
 
-    const updated = await Meeting.findByIdAndUpdate(req.params.id, req.body, { new: true })
-      .populate('createdBy', 'name avatar role')
-      .populate('participants', 'name avatar role');
+    const meetings = await Meeting.find(query)
+      .populate('scheduledBy', 'name email avatar')
+      .populate('attendees.user', 'name email avatar role')
+      .populate('teams', 'name color')
+      .sort({ startTime: 1 })
+      .skip(skip)
+      .limit(parseInt(limit));
 
-    await logAudit('UPDATE', 'Meeting', updated._id, req.user._id, { oldState, newState: updated.toObject() });
+    const total = await Meeting.countDocuments(query);
 
-    // Send MEETING_UPDATED notifications to all participants
-    const notifPromises = (updated.participants || [])
-      .filter((p) => p._id.toString() !== req.user._id.toString())
-      .map((p) =>
-        Notification.create({
-          user: p._id,
-          type: 'MEETING_UPDATED',
-          message: `Meeting "${updated.title}" has been updated`,
-          relatedMeeting: updated._id,
-        })
-      );
-    await Promise.all(notifPromises);
-
-    // Live update broadcast
-    emitToUsers(updated.participants.map(p => p._id.toString()), 'MEETING_UPDATED', updated);
-
-    return success(res, { meeting: updated }, 'Meeting updated successfully');
-  } catch (err) {
-    next(err);
+    res.json({
+      success: true,
+      data: meetings,
+      pagination: {
+        total,
+        page: parseInt(page),
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-const deleteMeeting = async (req, res, next) => {
+// Update Meeting
+exports.updateMeeting = async (req, res) => {
   try {
-    const meeting = await Meeting.findOneAndUpdate(
-      { _id: req.params.id, isDeleted: { $ne: true }, createdBy: req.user._id }, // Changed to createdBy
-      { isDeleted: true },
-      { new: true }
-    );
-    if (!meeting) return error(res, 'Meeting not found or you are not authorized to delete it.', 404); // Updated error message
+    const meeting = await Meeting.findById(req.params.id);
+    if (!meeting) return res.status(404).json({ success: false, message: 'Briefing not found' });
 
-    await logAudit('DELETE', 'Meeting', meeting._id, req.user._id, { details: 'Soft deleted meeting' });
+    // Only scheduler or Admin can update
+    const isAdmin = req.user.role === 'CEO' || req.user.role === 'CTO';
+    if (!isAdmin && meeting.scheduledBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Access Denied: Briefing locked' });
+    }
 
-    // Live delete broadcast
-    return success(res, {}, 'Meeting deleted');
-  } catch (err) {
-    next(err);
+    const updates = req.body;
+    Object.keys(updates).forEach(key => {
+      if (updates[key] !== undefined) {
+        meeting[key] = updates[key];
+      }
+    });
+
+    await meeting.save();
+
+    const updatedMeeting = await Meeting.findById(meeting._id)
+      .populate('scheduledBy', 'name email avatar')
+      .populate('attendees.user', 'name email avatar')
+      .populate('teams', 'name color');
+
+    // Notify attendees
+    meeting.attendees.forEach(async (attendee) => {
+      if (attendee.user.toString() === req.user._id.toString()) return;
+      await Notification.create({
+        recipient: attendee.user,
+        sender: req.user._id,
+        type: 'MEETING_UPDATED',
+        title: 'Briefing Updated',
+        message: `${meeting.title} parameters have shifted`,
+        relatedMeeting: meeting._id
+      });
+    });
+
+    res.json({
+      success: true,
+      data: updatedMeeting,
+      message: 'Briefing updated'
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-module.exports = { getMeetings, createMeeting, updateMeeting, deleteMeeting };
+// Update Attendance
+exports.updateAttendance = async (req, res) => {
+  try {
+    const { status } = req.body; // 'accepted' or 'declined'
+    const meeting = await Meeting.findById(req.params.id);
+    if (!meeting) return res.status(404).json({ success: false, message: 'Briefing not found' });
+
+    const attendee = meeting.attendees.find(a => a.user.toString() === req.user._id.toString());
+    if (!attendee) return res.status(404).json({ success: false, message: 'You are not assigned to this briefing' });
+
+    attendee.status = status;
+    await meeting.save();
+
+    res.json({
+      success: true,
+      message: `Status recorded: ${status.toUpperCase()}`
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Cancel Meeting
+exports.cancelMeeting = async (req, res) => {
+  try {
+    await Meeting.findByIdAndUpdate(req.params.id, { status: 'cancelled' });
+    res.json({ success: true, message: 'Briefing scrubbed' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

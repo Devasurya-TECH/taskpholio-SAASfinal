@@ -1,30 +1,44 @@
 const logger = require('../utils/logger');
 
 const errorHandler = (err, req, res, next) => {
-  logger.error(`${err.stack} | ${req.method} ${req.originalUrl}`);
+  logger.error(`${err.name}: ${err.message}`, { stack: err.stack, path: req.path });
 
-  // Mongoose validation errors
-  if (err.name === 'ValidationError') {
-    const messages = Object.values(err.errors).map((e) => e.message);
-    return res.status(400).json({ success: false, data: null, message: messages.join(', ') });
+  let error = { ...err };
+  error.message = err.message;
+
+  // Mongoose bad ObjectId
+  if (err.name === 'CastError') {
+    const message = 'Strategic resource not found';
+    error = { message, statusCode: 404 };
   }
 
   // Mongoose duplicate key
   if (err.code === 11000) {
-    const field = Object.keys(err.keyValue)[0];
-    return res.status(409).json({ success: false, data: null, message: `${field} already exists.` });
+    const message = 'Duplicate intelligence signature detected';
+    error = { message, statusCode: 400 };
   }
 
-  // Multer file errors
-  if (err.message && err.message.includes('Invalid file type')) {
-    return res.status(400).json({ success: false, data: null, message: err.message });
+  // Mongoose validation error
+  if (err.name === 'ValidationError') {
+    const message = Object.values(err.errors).map(val => val.message).join(', ');
+    error = { message, statusCode: 400 };
   }
 
-  const statusCode = err.statusCode || 500;
-  res.status(statusCode).json({
+  // JWT errors
+  if (err.name === 'JsonWebTokenError') {
+    const message = 'Invalid tactical token';
+    error = { message, statusCode: 401 };
+  }
+
+  if (err.name === 'TokenExpiredError') {
+    const message = 'Tactical token expired. Re-authenticate.';
+    error = { message, statusCode: 401 };
+  }
+
+  res.status(error.statusCode || 500).json({
     success: false,
-    data: null,
-    message: err.message || 'Internal Server Error',
+    message: error.message || 'Operational Server Error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 };
 
