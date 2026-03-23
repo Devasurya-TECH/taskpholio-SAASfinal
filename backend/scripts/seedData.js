@@ -78,15 +78,26 @@ const seedData = async () => {
       }
     ]);
 
-    // Update squads with operative assignments
+    // Update squads with operative assignments and leads
     await Team.findByIdAndUpdate(teams[0]._id, {
-      members: [ceo._id, cto._id, ...techOperatives.map(m => m._id)]
+      lead: ceo._id,
+      members: [ceo._id, cto._id, techOperatives[0]._id, techOperatives[1]._id]
+    });
+
+    await Team.findByIdAndUpdate(teams[1]._id, {
+      lead: cto._id,
+      members: [cto._id, techOperatives[0]._id]
     });
 
     console.log('✅ Operative deployment complete');
-    console.log('\n📋 Tactical Access Credentials:');
-    console.log('CEO: ceo@taskpholio.com / missioncontrol');
-    console.log('CTO: cto@taskpholio.com / missioncontrol');
+    console.log('\n╔══════════════════════════════════════════════════════╗');
+    console.log('║           TACTICAL ACCESS CREDENTIALS                ║');
+    console.log('╠══════════════════════════════════════════════════════╣');
+    console.log('║                                                      ║');
+    console.log('║  CEO: ceo@taskpholio.com / missioncontrol            ║');
+    console.log('║  CTO: cto@taskpholio.com / missioncontrol            ║');
+    console.log('║                                                      ║');
+    console.log('╚══════════════════════════════════════════════════════╝');
 
     process.exit(0);
   } catch (error) {
