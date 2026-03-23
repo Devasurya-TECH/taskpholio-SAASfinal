@@ -22,16 +22,23 @@ const taskSchema = Joi.object({
 // GET /tasks - public tasks or private tasks where user is in visibleTo
 const getTasks = async (req, res, next) => {
   try {
-    const { status, priority, search } = req.query;
+    const { status, priority, search, visibility } = req.query;
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip = (page - 1) * limit;
 
     const filter = { isDeleted: { $ne: true } };
-    if (visibility) {
+    
+    // CEO/CTO can see all tasks, others are restricted by visibility
+    if (req.user.role !== 'CEO' && req.user.role !== 'CTO') {
+      if (visibility) {
+        filter.visibility = visibility;
+        filter.visibleTo = req.user._id;
+      } else {
+        filter.$or = [{ visibility: 'public' }, { visibleTo: req.user._id }];
+      }
+    } else if (visibility) {
       filter.visibility = visibility;
-    } else {
-      filter.$or = [{ visibility: 'public' }, { visibleTo: req.user._id }];
     }
     if (status) filter.status = status;
     if (priority) filter.priority = priority;

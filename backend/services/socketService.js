@@ -42,9 +42,11 @@ const initializeSocket = (server) => {
 
   io.on("connection", (socket) => {
     const userId = socket.user._id.toString();
-    userSockets.set(userId, socket.id);
     
-    logger.info(`Socket connected: ${socket.id} (User: ${userId})`);
+    // Join a unique room for this user to support multiple sessions/tabs
+    socket.join(`user_${userId}`);
+    
+    logger.info(`Socket connected: ${socket.id} (User: ${userId} joined room: user_${userId})`);
 
     // Broadcast online status to others
     socket.broadcast.emit("user_status", { userId, status: "online" });
@@ -54,7 +56,6 @@ const initializeSocket = (server) => {
     socket.emit("online_users", onlineUsers);
 
     socket.on("disconnect", () => {
-      userSockets.delete(userId);
       logger.info(`Socket disconnected: ${socket.id} (User: ${userId})`);
       // Broadcast offline status
       socket.broadcast.emit("user_status", { userId, status: "offline" });
@@ -69,11 +70,10 @@ const getIo = () => {
   return io;
 };
 
-// Emit event to a specific user
+// Emit event to a specific user (all their active sessions/tabs)
 const emitToUser = (userId, event, data) => {
-  const socketId = userSockets.get(userId.toString());
-  if (socketId && io) {
-    io.to(socketId).emit(event, data);
+  if (io) {
+    io.to(`user_${userId.toString()}`).emit(event, data);
   }
 };
 

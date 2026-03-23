@@ -45,10 +45,12 @@ const requireTaskAccess = async (req, res, next) => {
 
     if (!task || task.isDeleted) return error(res, 'Task not found', 404);
 
-    const isVisible = task.visibility === 'public' || task.visibleTo.some(
-      (uid) => uid.toString() === req.user._id.toString()
-    );
-
+    const isVisible = 
+      req.user.role === 'CEO' || 
+      req.user.role === 'CTO' ||
+      task.visibility === 'public' || 
+      task.visibleTo.some((uid) => (uid._id || uid).toString() === req.user._id.toString());
+    
     if (!isVisible) return error(res, 'Access denied. You do not have permission to view this task.', 403);
 
     req.task = task;
