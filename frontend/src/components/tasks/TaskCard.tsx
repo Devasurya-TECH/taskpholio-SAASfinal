@@ -1,15 +1,16 @@
 "use client";
-import { useState } from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  Calendar, User, MoreHorizontal, MessageSquare, Paperclip, 
+  Calendar, MoreHorizontal, MessageSquare, Paperclip, 
   ChevronDown, ChevronUp, CheckCircle2, Clock, Play, 
-  AlertCircle, ShieldCheck, Flag, Users, Tag
+  ShieldCheck, Flag, Users, Tag
 } from "lucide-react";
-import { cn, getPriorityColor, getStatusColor, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { useTaskStore } from "@/store/taskStore";
 import { toast } from "sonner";
 import Image from "next/image";
+import "./TaskCard.css";
 
 interface TaskCardProps {
   task: any;
@@ -19,30 +20,14 @@ interface TaskCardProps {
 export default function TaskCard({ task, view = "grid" }: TaskCardProps) {
   const [expanded, setExpanded] = useState(false);
   const { updateTaskStatus } = useTaskStore();
-  const isGrid = view === "grid";
 
   const handleStatusChange = async (newStatus: string) => {
     try {
       await updateTaskStatus(task._id, newStatus as any);
-      toast.success(`Mission Protocol: ${newStatus.toUpperCase()} initialized.`);
+      toast.success(`Task status updated to ${newStatus}.`);
     } catch (error) {
-      toast.error("Protocol override failed.");
+      toast.error("Failed to update task status.");
     }
-  };
-
-  const priorityColors = {
-    low: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20",
-    medium: "text-blue-400 bg-blue-400/10 border-blue-400/20",
-    high: "text-amber-400 bg-amber-400/10 border-amber-400/20",
-    urgent: "text-red-500 bg-red-500/10 border-red-500/20"
-  };
-
-  const statusIcons = {
-    pending: <Clock className="w-4 h-4" />,
-    in_progress: <Play className="w-4 h-4 animate-pulse" />,
-    review: <ShieldCheck className="w-4 h-4" />,
-    completed: <CheckCircle2 className="w-4 h-4" />,
-    blocked: <AlertCircle className="w-4 h-4" />
   };
 
   return (
@@ -50,109 +35,90 @@ export default function TaskCard({ task, view = "grid" }: TaskCardProps) {
       layout
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={cn(
-        "glass border-l-4 rounded-2xl p-5 transition-all group hover:shadow-[0_0_30px_rgba(0,0,0,0.2)]",
-        task.priority === "urgent" ? "border-l-red-500" : 
-        task.priority === "high" ? "border-l-amber-500" : 
-        task.priority === "medium" ? "border-l-blue-500" : "border-l-emerald-500"
-      )}
+      className={`task-card priority-${task.priority || 'medium'}`}
     >
-      <div className="flex flex-col gap-4">
+      <div className="d-flex flex-col gap-4">
         {/* Header: Priority and Meta */}
-        <div className="flex items-start justify-between">
-          <div className="flex flex-wrap gap-2">
-            <span className={cn(
-              "text-[9px] font-black uppercase tracking-[0.2em] px-2.5 py-1 rounded-full border",
-              priorityColors[task.priority as keyof typeof priorityColors] || priorityColors.medium
-            )}>
-              {task.priority} Priority
+        <div className="task-header">
+          <div className="task-badges">
+            <span className={`task-badge priority-${task.priority || 'medium'}`}>
+              {task.priority || "Medium"} Priority
             </span>
             {task.team && (
-              <span className="text-[9px] font-black uppercase tracking-[0.2em] px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-muted-foreground flex items-center gap-1.5">
-                <Users className="w-3 h-3" />
+              <span className="task-badge team-badge">
+                <Users size={12} />
                 {task.team.name}
               </span>
             )}
           </div>
-          <button className="text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-all">
-            <MoreHorizontal className="w-5 h-5" />
+          <button className="btn-icon">
+            <MoreHorizontal size={20} />
           </button>
         </div>
 
         {/* Title and Description */}
         <div>
-          <h4 className="text-lg font-bold text-foreground mb-2 group-hover:text-primary transition-colors leading-tight">
+          <h4 className="task-title">
             {task.title}
           </h4>
           {task.description && (
-            <p className={cn(
-              "text-xs text-muted-foreground leading-relaxed",
-              !expanded && "line-clamp-2"
-            )}>
+            <p className={`task-description ${expanded ? 'expanded' : ''}`}>
               {task.description}
             </p>
           )}
         </div>
 
         {/* Progress Tracker */}
-        <div className="space-y-2">
-          <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
-            <span className="text-muted-foreground">Mission Progress</span>
-            <span className="text-primary">{task.progress || 0}%</span>
+        <div className="task-progress-section">
+          <div className="task-progress-header">
+            <span style={{ color: 'var(--text-secondary)' }}>Task Progress</span>
+            <span style={{ color: task.progress >= 100 ? 'var(--text-accent)' : 'var(--info)' }}>{task.progress || 0}%</span>
           </div>
-          <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
+          <div className="task-progress-bar-bg">
             <motion.div 
               initial={{ width: 0 }}
               animate={{ width: `${task.progress || 0}%` }}
-              className={cn(
-                "h-full transition-all duration-500",
-                (task.progress || 0) >= 100 ? "bg-primary shadow-[0_0_10px_rgba(34,197,94,0.5)]" : "bg-blue-500"
-              )}
+              className={`task-progress-bar-fill ${(task.progress || 0) >= 100 ? 'completed' : ''}`}
             />
           </div>
         </div>
 
         {/* Footer Info */}
-        <div className="flex items-center justify-between pt-2 border-t border-white/5 mt-2">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground uppercase">
-              <Calendar className="w-3.5 h-3.5" />
-              {task.dueDate ? formatDate(task.dueDate) : "No Deadline"}
+        <div className="task-footer">
+          <div className="task-meta">
+            <div className="task-meta-item">
+              <Calendar size={14} />
+              {task.dueDate ? formatDate(task.dueDate) : "No Due Date"}
             </div>
             {task.comments?.length > 0 && (
-              <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground uppercase">
-                <MessageSquare className="w-3.5 h-3.5" />
+              <div className="task-meta-item">
+                <MessageSquare size={14} />
                 {task.comments.length}
               </div>
             )}
             {task.attachments?.length > 0 && (
-              <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground uppercase">
-                <Paperclip className="w-3.5 h-3.5" />
+              <div className="task-meta-item">
+                <Paperclip size={14} />
                 {task.attachments.length}
               </div>
             )}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="d-flex align-center gap-3">
             {task.assignedTo && (
-              <div className="relative group/user">
-                <div className="w-8 h-8 rounded-full border-2 border-white/10 bg-black/40 flex items-center justify-center overflow-hidden">
-                  {task.assignedTo.avatar ? (
-                    <Image src={task.assignedTo.avatar} alt={task.assignedTo.name} width={32} height={32} />
-                  ) : (
-                    <span className="text-[10px] font-black uppercase">{task.assignedTo.name?.[0]}</span>
-                  )}
-                </div>
-                <div className="absolute bottom-full right-0 mb-2 px-2 py-1 bg-black rounded text-[8px] font-black uppercase whitespace-nowrap opacity-0 group-hover/user:opacity-100 transition-opacity z-10 border border-white/10">
-                  {task.assignedTo.name}
-                </div>
+              <div className="task-assignee" title={task.assignedTo.name}>
+                {task.assignedTo.avatar ? (
+                  <Image src={task.assignedTo.avatar} alt={task.assignedTo.name} width={32} height={32} />
+                ) : (
+                  <span>{task.assignedTo.name?.[0]?.toUpperCase()}</span>
+                )}
               </div>
             )}
             <button 
               onClick={() => setExpanded(!expanded)}
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-muted-foreground transition-all"
+              className="btn-icon"
             >
-              {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
           </div>
         </div>
@@ -164,46 +130,38 @@ export default function TaskCard({ task, view = "grid" }: TaskCardProps) {
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden border-t border-white/5 pt-4 space-y-6"
+              className="task-expanded-content"
             >
-              {/* Sub-objectives */}
+              {/* Subtasks */}
               {task.subtasks?.length > 0 && (
-                <div className="space-y-3">
-                  <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary flex items-center gap-2">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Sub-Objectives
+                <div>
+                  <h5 className="task-section-title">
+                    <CheckCircle2 size={14} />
+                    Subtasks
                   </h5>
-                  <div className="space-y-2">
+                  <div>
                     {task.subtasks.map((st: any, idx: number) => (
-                      <div key={idx} className="flex items-center gap-3 bg-white/5 p-2.5 rounded-xl border border-white/5">
-                        <div className={cn(
-                          "w-4 h-4 rounded border flex items-center justify-center transition-all",
-                          st.completed ? "bg-primary border-primary text-black" : "border-white/20"
-                        )}>
-                          {st.completed && <CheckCircle2 className="w-3 h-3" />}
+                      <div key={idx} className={`subtask-item ${st.completed ? 'completed' : ''}`}>
+                        <div className="subtask-item-icon">
+                          {st.completed && <CheckCircle2 size={10} />}
                         </div>
-                        <span className={cn(
-                          "text-xs font-medium",
-                          st.completed ? "text-muted-foreground line-through" : "text-foreground"
-                        )}>
-                          {st.title}
-                        </span>
+                        <span>{st.title}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Tactical Tags */}
+              {/* Tags */}
               {task.tags?.length > 0 && (
-                <div className="space-y-3">
-                  <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary flex items-center gap-2">
-                    <Tag className="w-3.5 h-3.5" />
-                    Tactical Tags
+                <div>
+                  <h5 className="task-section-title">
+                    <Tag size={14} />
+                    Tags
                   </h5>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="task-badges">
                     {task.tags.map((tag: string) => (
-                      <span key={tag} className="px-2.5 py-1 bg-white/5 rounded-lg text-[9px] font-bold uppercase tracking-widest text-muted-foreground border border-white/5">
+                      <span key={tag} className="tag-badge" style={{ backgroundColor: 'var(--bg-surface-hover)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>
                         {tag}
                       </span>
                     ))}
@@ -211,39 +169,35 @@ export default function TaskCard({ task, view = "grid" }: TaskCardProps) {
                 </div>
               )}
 
-              {/* Status Protocol Control */}
-              <div className="space-y-3">
-                <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary flex items-center gap-2">
-                  <Flag className="w-3.5 h-3.5" />
-                  Protocol Protocol
+              {/* Status Update */}
+              <div>
+                <h5 className="task-section-title">
+                  <Flag size={14} />
+                  Update Status
                 </h5>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="status-buttons">
                   {[
-                    { id: 'in_progress', label: 'Initialize', icon: <Play className="w-3 h-3" /> },
-                    { id: 'review', label: 'Review', icon: <ShieldCheck className="w-3 h-3" /> },
-                    { id: 'completed', label: 'Complete', icon: <CheckCircle2 className="w-3 h-3" /> }
-                  ].map((protocol) => (
+                    { id: 'pending', label: 'Not Started', icon: <Clock size={12} /> },
+                    { id: 'in-progress', label: 'In Progress', icon: <Play size={12} /> },
+                    { id: 'blocked', label: 'Blocked', icon: <ShieldCheck size={12} /> },
+                    { id: 'completed', label: 'Completed', icon: <CheckCircle2 size={12} /> }
+                  ].map((status) => (
                     <button
-                      key={protocol.id}
-                      onClick={() => handleStatusChange(protocol.id)}
-                      disabled={task.status === protocol.id}
-                      className={cn(
-                        "flex flex-col items-center justify-center gap-2 p-3 rounded-2xl border transition-all uppercase tracking-tighter font-black text-[9px]",
-                        task.status === protocol.id 
-                          ? "bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(34,197,94,0.2)]" 
-                          : "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:border-white/20"
-                      )}
+                      key={status.id}
+                      onClick={() => handleStatusChange(status.id)}
+                      disabled={task.status === status.id}
+                      className={`status-btn ${task.status === status.id ? 'active' : ''}`}
                     >
-                      {protocol.icon}
-                      {protocol.label}
+                      {status.icon}
+                      {status.label}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Comms Link */}
-              <button className="w-full py-3 bg-secondary/50 rounded-2xl text-[9px] font-black uppercase tracking-[0.2em] hover:bg-secondary transition-all border border-white/5 text-muted-foreground">
-                View Full Intelligence Report
+              {/* Action Link */}
+              <button className="task-details-btn">
+                View Task Details
               </button>
             </motion.div>
           )}

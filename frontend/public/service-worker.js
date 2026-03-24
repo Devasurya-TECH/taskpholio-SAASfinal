@@ -1,4 +1,4 @@
-const CACHE_NAME = 'taskpholio-v1.0.0';
+const CACHE_NAME = 'taskpholio-v1.0.2';
 const urlsToCache = [
   '/',
   '/dashboard',
@@ -41,6 +41,8 @@ self.addEventListener('activate', (event) => {
 
 // Fetch event - Network first, fallback to cache
 self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+
   event.respondWith(
     fetch(event.request)
       .then((response) => {
@@ -78,22 +80,26 @@ self.addEventListener('push', (event) => {
   
   let data = {};
   if (event.data) {
-    data = event.data.json();
+    try {
+      data = event.data.json();
+    } catch {
+      data = { body: event.data.text() };
+    }
   }
   
   const title = data.title || 'Taskpholio Notification';
   const options = {
     body: data.body || 'You have a new notification',
-    icon: '/icons/icon-192x192.png',
-    badge: '/icons/badge-72x72.png',
+    icon: '/next.svg',
+    badge: '/next.svg',
     vibrate: [200, 100, 200],
     data: {
       url: data.url || '/',
       notificationId: data.notificationId
     },
     actions: [
-      { action: 'open', title: 'Open', icon: '/icons/open.png' },
-      { action: 'close', title: 'Close', icon: '/icons/close.png' }
+      { action: 'open', title: 'Open' },
+      { action: 'close', title: 'Close' }
     ],
     tag: data.tag || 'taskpholio-notification',
     requireInteraction: false

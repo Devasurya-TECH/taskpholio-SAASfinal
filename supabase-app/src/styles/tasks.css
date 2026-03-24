@@ -1,0 +1,100 @@
+.tasks-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  gap: 12px;
+}
+
+.tasks-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.filter-tab {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: border-color 150ms, color 150ms, background 150ms;
+  white-space: nowrap;
+}
+.filter-tab:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.filter-tab.active {
+  background: var(--accent-dim);
+  border-color: var(--accent-border);
+  color: var(--accent);
+  font-weight: 600;
+}
+.filter-tab-spacer { flex: 1; }
+
+.task-search {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 7px 12px;
+  outline: none;
+  width: 200px;
+  transition: border-color 150ms;
+}
+.task-search:focus { border-color: var(--accent); }
+.task-search::placeholder { color: var(--text-muted); }
+
+.task-table-wrap {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.task-row-num {
+  font-family: var(--font-data);
+  font-size: 11px;
+  color: var(--text-muted);
+  width: 40px;
+}
+
+.task-title-cell { font-weight: 600; max-width: 280px; }
+.task-description-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+.task-due-date {
+  font-family: var(--font-data);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.task-due-date.overdue { color: var(--danger); }
+
+.task-actions-cell { display: flex; gap: 6px; }
+
+.status-select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: var(--font-data);
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+  outline: none;
+}
+
+.assignee-cell { display: flex; align-items: center; gap: 8px; }

@@ -15,6 +15,8 @@ import { Task, Team } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
+import { supabase } from "@/lib/supabase";
+
 const COLORS = ["#3b82f6", "#22c55e", "#a855f7", "#f59e0b", "#ef4444"];
 
 const StatCard = ({ label, value, sub, icon: Icon, color }: any) => (
@@ -32,17 +34,44 @@ const StatCard = ({ label, value, sub, icon: Icon, color }: any) => (
 
 export default function AnalyticsPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [teams, setTeams] = useState<Team[]>([]);
+  const [teams, setTeams] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([api.get("tasks"), api.get("teams")])
-      .then(([tasksRes, teamsRes]) => {
-        setTasks(tasksRes.data.data.tasks || []);
-        setTeams(teamsRes.data.data.teams || []);
-      })
-      .catch(() => toast.error("Failed to sync intelligence data"))
-      .finally(() => setLoading(false));
+    const fetchAnalytics = async () => {
+      try {
+        const { data: tasksData } = await supabase.from('tasks').select('*');
+        setTasks((tasksData as any) || []);
+
+        const teamIds = ['technical_engine', 'security_auth', 'social_marketing'];
+        const teamLabels: Record<string, string> = {
+          technical_engine: 'Technical Engine',
+          security_auth: 'Security & Auth',
+          social_marketing: 'Social Marketing',
+        };
+
+        const teamsData = await Promise.all(
+          teamIds.map(async (teamId) => {
+            const { data: members } = await supabase.from('profiles').select('id').eq('team', teamId);
+            const { count: completedTasks } = await supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('assigned_team', teamId).eq('status', 'completed');
+            const { count: totalTasks } = await supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('assigned_team', teamId);
+
+            return {
+              _id: teamId,
+              name: teamLabels[teamId],
+              members: members || [],
+              stats: { totalTasks: totalTasks || 0, completedTasks: completedTasks || 0 }
+            };
+          })
+        );
+        setTeams(teamsData);
+      } catch (err) {
+        toast.error("Failed to sync intelligence data");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAnalytics();
   }, []);
 
   const taskStats = useMemo(() => {

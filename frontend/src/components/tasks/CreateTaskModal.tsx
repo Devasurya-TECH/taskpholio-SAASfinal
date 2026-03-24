@@ -1,12 +1,12 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Plus, Calendar, Tag, User as UserIcon, Flag, Briefcase, Paperclip, CheckCircle2, Trash2, Loader2, Upload } from "lucide-react";
+import { X, Plus, Calendar, User as UserIcon, Flag, Briefcase, Paperclip, CheckCircle2, Trash2, Loader2, Upload } from "lucide-react";
 import { useTaskStore } from "@/store/taskStore";
 import { useAdminStore } from "@/store/adminStore";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import api from "@/lib/api";
+import "./CreateTaskModal.css";
 
 interface Props { onClose: () => void; }
 
@@ -18,6 +18,8 @@ interface Subtask {
 export default function CreateTaskModal({ onClose }: Props) {
   const { createTask } = useTaskStore();
   const { users, teams, fetchUsers, fetchTeams } = useAdminStore();
+  const [assignmentMode, setAssignmentMode] = useState<"member" | "team">("member");
+  const [memberVisibility, setMemberVisibility] = useState<"private" | "public">("private");
   
   const [formData, setFormData] = useState({
     title: "",
@@ -38,11 +40,25 @@ export default function CreateTaskModal({ onClose }: Props) {
   const [loading, setLoading] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectedAssignee = users.find((u) => u._id === formData.assignedTo);
+  const assigneeStatusRaw = String((selectedAssignee as any)?.status || "active").toLowerCase();
+  const assigneeStatus =
+    assigneeStatusRaw === "away" || assigneeStatusRaw === "inactive" || assigneeStatusRaw === "busy"
+      ? assigneeStatusRaw
+      : "active";
 
   useEffect(() => {
     fetchUsers();
     fetchTeams();
-  }, []);
+  }, [fetchUsers, fetchTeams]);
+
+  useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      assignedTo: assignmentMode === "member" ? prev.assignedTo : "",
+      team: assignmentMode === "team" ? prev.team : "",
+    }));
+  }, [assignmentMode]);
 
   const handleAddTag = () => {
     if (currentTag.trim() && !formData.tags.includes(currentTag.trim())) {
@@ -93,9 +109,9 @@ export default function CreateTaskModal({ onClose }: Props) {
         }
       }
       setAttachments(uploadedFiles);
-      toast.success("Intelligence assets uploaded.");
+      toast.success("Attachments uploaded successfully.");
     } catch (error) {
-      toast.error("Asset upload failed.");
+      toast.error("Failed to upload attachments.");
     } finally {
       setUploading(false);
     }
@@ -103,229 +119,291 @@ export default function CreateTaskModal({ onClose }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.title.trim()) return toast.error("Title is required.");
-    if (!formData.assignedTo) return toast.error("Please assign an operative.");
-    if (!formData.team) return toast.error("Please assign a division.");
+    if (!formData.title.trim()) return toast.error("Task title is required.");
+    if (assignmentMode === "member" && !formData.assignedTo) return toast.error("Please assign to a member.");
+    if (assignmentMode === "team" && !formData.team) return toast.error("Please assign a team.");
     
     setLoading(true);
     try {
       await createTask({
         ...formData,
+        assignedTo: assignmentMode === "member" ? formData.assignedTo : "",
+        team: assignmentMode === "team" ? formData.team : "",
+        memberVisibility,
         attachments
       });
-      toast.success("Mission deployed and operatives notified!");
+      toast.success("Task created successfully!");
       onClose();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Tactical Failure: Mission deployment aborted.");
+      toast.error(err?.message || "Failed to create task.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }} 
-      animate={{ opacity: 1 }} 
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[100] flex items-center justify-center p-4" 
-      onClick={onClose}
-    >
+    <AnimatePresence>
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95, y: 20 }} 
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="glass border-primary/20 rounded-[2rem] p-8 w-full max-w-3xl max-h-[95vh] overflow-y-auto relative shadow-[0_0_50px_rgba(34,197,94,0.1)]" 
-        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0 }} 
+        animate={{ opacity: 1 }} 
+        exit={{ opacity: 0 }}
+        className="modal-overlay"
+        onClick={onClose}
       >
-        <button onClick={onClose} className="absolute top-6 right-6 p-2 rounded-xl hover:bg-white/5 text-muted-foreground hover:text-foreground transition-all">
-          <X className="w-5 h-5" />
-        </button>
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          className="modal-content"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button onClick={onClose} className="modal-close-btn" aria-label="Close">
+            <X size={24} />
+          </button>
 
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            <h2 className="text-3xl font-black text-foreground tracking-tighter uppercase italic">Mission Briefing</h2>
+          <div className="modal-header">
+            <h2 className="modal-title">Create Task</h2>
+            <p className="modal-subtitle">Add a new task to your project space.</p>
           </div>
-          <p className="text-muted-foreground font-medium">Define high-priority objectives and allocate tactical resources.</p>
-        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Left Column: Basic Intel */}
-            <div className="space-y-6">
+          <form onSubmit={handleSubmit}>
+            <div className="form-grid">
+              {/* Left Column: Core Task Info */}
               <div>
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-3 block">Objective Designation</label>
-                <input 
-                  type="text" 
-                  required 
-                  value={formData.title} 
-                  onChange={(e) => setFormData({...formData, title: e.target.value})} 
-                  placeholder="CLASSIFIED NAME"
-                  className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-4 text-lg font-bold text-foreground focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all placeholder:text-muted-foreground/30 uppercase tracking-tight" 
-                />
+                <div className="form-group">
+                  <label className="form-label">Task Title</label>
+                  <input 
+                    type="text" 
+                    required 
+                    value={formData.title} 
+                    onChange={(e) => setFormData({...formData, title: e.target.value})} 
+                    placeholder="E.g., Design new landing page"
+                    className="form-input" 
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Description</label>
+                  <textarea 
+                    value={formData.description} 
+                    onChange={(e) => setFormData({...formData, description: e.target.value})} 
+                    placeholder="Provide details about this task..."
+                    className="form-input form-textarea" 
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Assignment Mode</label>
+                  <div className="selection-grid">
+                    <button
+                      type="button"
+                      onClick={() => setAssignmentMode("member")}
+                      className={`selection-card ${assignmentMode === "member" ? "active" : ""}`}
+                    >
+                      <span className="selection-title">Individual Task</span>
+                      <span className="selection-description">Assign to one team member</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAssignmentMode("team")}
+                      className={`selection-card ${assignmentMode === "team" ? "active" : ""}`}
+                    >
+                      <span className="selection-title">Team-wide Task</span>
+                      <span className="selection-description">Assign to an entire squad</span>
+                    </button>
+                  </div>
+                </div>
+
+                {assignmentMode === "member" && (
+                  <div className="form-group">
+                    <label className="form-label">Member Task Visibility</label>
+                    <div className="selection-grid">
+                      <button
+                        type="button"
+                        onClick={() => setMemberVisibility("private")}
+                        className={`selection-card ${memberVisibility === "private" ? "active" : ""}`}
+                      >
+                        <span className="selection-title">Private</span>
+                        <span className="selection-description">Only assignee and creator can view</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMemberVisibility("public")}
+                        className={`selection-card ${memberVisibility === "public" ? "active" : ""}`}
+                      >
+                        <span className="selection-title">Public</span>
+                        <span className="selection-description">All members can view this task</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {assignmentMode === "member" ? (
+                  <div className="form-group">
+                    <label className="form-label">Assignee *</label>
+                    <div className="form-input-container">
+                      <UserIcon className="form-input-icon" size={16} />
+                      <select
+                        required
+                        value={formData.assignedTo}
+                        onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })}
+                        className="form-input with-icon"
+                      >
+                        <option value="">Select Assignee</option>
+                        {users.map((u) => (
+                          <option key={u._id} value={u._id}>{u.name} ({u.role})</option>
+                        ))}
+                      </select>
+                    </div>
+                    {selectedAssignee && (
+                      <div className="assignee-meta">
+                        <div className={`assignee-status ${assigneeStatus}`}>
+                          <span className={`status-dot ${assigneeStatus}`} />
+                          <span className="status-text">
+                            {assigneeStatus === "inactive"
+                              ? "Offline"
+                              : assigneeStatus.charAt(0).toUpperCase() + assigneeStatus.slice(1)}
+                          </span>
+                        </div>
+                        <span className="assignee-team">
+                          Team:{" "}
+                          {typeof (selectedAssignee as any)?.team === "object"
+                            ? (selectedAssignee as any)?.team?.name || "Unassigned"
+                            : (selectedAssignee as any)?.team || "Unassigned"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="form-group">
+                    <label className="form-label">Team *</label>
+                    <div className="form-input-container">
+                      <Briefcase className="form-input-icon" size={16} />
+                      <select
+                        required
+                        value={formData.team}
+                        onChange={(e) => setFormData({ ...formData, team: e.target.value })}
+                        className="form-input with-icon"
+                      >
+                        <option value="">Select Team</option>
+                        {teams.map((t) => (
+                          <option key={t._id} value={t._id}>{t.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="text-xs text-muted-foreground" style={{ marginTop: "0.5rem" }}>
+                      Every member in this team will receive a notification instantly.
+                    </p>
+                  </div>
+                )}
+
+                <div className="d-flex gap-4">
+                  <div className="form-group flex-1">
+                    <label className="form-label">Priority</label>
+                    <div className="form-input-container">
+                      <Flag className="form-input-icon" size={16} />
+                      <select 
+                        value={formData.priority} 
+                        onChange={(e) => setFormData({...formData, priority: e.target.value as any})}
+                        className="form-input with-icon"
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="urgent">Urgent</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="form-group flex-1">
+                    <label className="form-label">Due Date</label>
+                    <div className="form-input-container">
+                      <Calendar className="form-input-icon" size={16} />
+                      <input 
+                        type="date" 
+                        value={formData.dueDate} 
+                        onChange={(e) => setFormData({...formData, dueDate: e.target.value})}
+                        className="form-input with-icon date-input" 
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
 
+              {/* Right Column: Additional Details */}
               <div>
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-3 block">Tactical Summary</label>
-                <textarea 
-                  value={formData.description} 
-                  onChange={(e) => setFormData({...formData, description: e.target.value})} 
-                  rows={4} 
-                  placeholder="DETAILED INTEL DEBRIEF..."
-                  className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-4 text-sm font-medium text-foreground focus:border-primary/50 focus:ring-4 focus:ring-primary/10 resize-none transition-all placeholder:text-muted-foreground/30" 
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-3 block">Lead Operative</label>
-                  <div className="relative">
-                    <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <select 
-                      required
-                      value={formData.assignedTo} 
-                      onChange={(e) => setFormData({...formData, assignedTo: e.target.value})}
-                      className="w-full bg-black/40 border border-white/10 rounded-2xl pl-12 pr-4 py-3.5 text-sm font-bold focus:border-primary/50 transition-all appearance-none"
-                    >
-                      <option value="">SELECT OPERATIVE</option>
-                      {users
-                        .filter(u => !formData.team || (u.team as any)?._id === formData.team || (u.team as any) === formData.team)
-                        .map(u => (
-                          <option key={u._id} value={u._id} className="bg-neutral-900">{u.name} ({u.role})</option>
-                        ))
-                      }
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-3 block">Division</label>
-                  <div className="relative">
-                    <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <select 
-                      required
-                      value={formData.team} 
-                      onChange={(e) => setFormData({...formData, team: e.target.value})}
-                      className="w-full bg-black/40 border border-white/10 rounded-2xl pl-12 pr-4 py-3.5 text-sm font-bold focus:border-primary/50 transition-all appearance-none"
-                    >
-                      <option value="">SELECT TEAM</option>
-                      {teams.map(t => (
-                        <option key={t._id} value={t._id} className="bg-neutral-900">{t.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-3 block">Threat Level</label>
-                  <div className="relative">
-                    <Flag className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <select 
-                      value={formData.priority} 
-                      onChange={(e) => setFormData({...formData, priority: e.target.value as any})}
-                      className="w-full bg-black/40 border border-white/10 rounded-2xl pl-12 pr-4 py-3.5 text-sm font-bold focus:border-primary/50 transition-all appearance-none"
-                    >
-                      <option value="low">ALPHA</option>
-                      <option value="medium">BETA</option>
-                      <option value="high">GAMMA</option>
-                      <option value="urgent">OMEGA</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-3 block">Target Date</label>
-                  <div className="relative">
-                    <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <input 
-                      type="date" 
-                      value={formData.dueDate} 
-                      onChange={(e) => setFormData({...formData, dueDate: e.target.value})}
-                      className="w-full bg-black/40 border border-white/10 rounded-2xl pl-12 pr-4 py-3.5 text-sm font-bold focus:border-primary/50 transition-all" 
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column: Advanced Intel */}
-            <div className="space-y-6">
-              {/* Sub-objectives */}
-              <div>
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-3 block">Sub-Objectives</label>
-                <div className="space-y-3">
-                  <div className="flex gap-2">
+                <div className="form-group">
+                  <label className="form-label">Subtasks</label>
+                  <div className="d-flex gap-2">
                     <input 
                       type="text" 
                       value={currentSubtask}
                       onChange={(e) => setCurrentSubtask(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddSubtask())}
-                      placeholder="ADD SUB-TASK..."
-                      className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-medium focus:border-primary/50 transition-all"
+                      placeholder="Add subtask..."
+                      className="form-input flex-1"
                     />
                     <button 
                       type="button"
                       onClick={handleAddSubtask}
-                      className="p-3 bg-primary/10 text-primary border border-primary/20 rounded-xl hover:bg-primary/20 transition-all"
+                      className="btn-icon"
+                      style={{ border: '1px solid var(--border-color)' }}
                     >
-                      <Plus className="w-5 h-5" />
+                      <Plus size={18} />
                     </button>
                   </div>
-                  <div className="max-h-32 overflow-y-auto space-y-2 pr-2">
+                  <div className="list-container">
                     {formData.subtasks.map((st, idx) => (
-                      <div key={idx} className="flex items-center justify-between gap-3 bg-white/5 p-3 rounded-xl border border-white/5 group">
-                        <div className="flex items-center gap-3">
-                          <CheckCircle2 className="w-4 h-4 text-muted-foreground" />
-                          <span className="text-sm font-medium">{st.title}</span>
+                      <div key={idx} className="list-item">
+                        <div className="d-flex align-center gap-2">
+                          <CheckCircle2 size={16} className="text-muted" />
+                          <span>{st.title}</span>
                         </div>
-                        <button onClick={() => handleRemoveSubtask(idx)} className="text-muted-foreground hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
-                          <Trash2 className="w-4 h-4" />
+                        <button type="button" onClick={() => handleRemoveSubtask(idx)} className="list-item-action">
+                          <Trash2 size={16} />
                         </button>
                       </div>
                     ))}
                   </div>
                 </div>
-              </div>
 
-              {/* Tactical Tags */}
-              <div>
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-3 block">Tactical Tags</label>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {formData.tags.map(tag => (
-                    <span key={tag} className="flex items-center gap-2 bg-primary/10 text-primary px-3 py-1.5 rounded-full text-[10px] font-black uppercase border border-primary/20">
-                      {tag}
-                      <X className="w-3 h-3 cursor-pointer" onClick={() => handleRemoveTag(tag)} />
-                    </span>
-                  ))}
+                <div className="form-group">
+                  <label className="form-label">Tags</label>
+                  <div className="tags-container">
+                    {formData.tags.map(tag => (
+                      <span key={tag} className="tag-badge">
+                        {tag}
+                        <button type="button" onClick={() => handleRemoveTag(tag)}>
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="d-flex gap-2">
+                    <input 
+                      type="text" 
+                      value={currentTag}
+                      onChange={(e) => setCurrentTag(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
+                      placeholder="Add tag (e.g., frontend)..."
+                      className="form-input flex-1"
+                    />
+                    <button 
+                      type="button"
+                      onClick={handleAddTag}
+                      className="btn-icon"
+                      style={{ border: '1px solid var(--border-color)' }}
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    value={currentTag}
-                    onChange={(e) => setCurrentTag(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
-                    placeholder="DEPLOY TAG..."
-                    className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-medium focus:border-primary/50 transition-all"
-                  />
-                  <button 
-                    type="button"
-                    onClick={handleAddTag}
-                    className="p-3 bg-secondary text-foreground rounded-xl hover:bg-secondary/80 transition-all"
-                  >
-                    <Plus className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
 
-              {/* Intelligence Assets */}
-              <div>
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-3 block">Intelligence Assets (Attachments)</label>
-                <div className="space-y-4">
+                <div className="form-group">
+                  <label className="form-label">Attachments</label>
                   <div 
                     onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-white/10 rounded-2xl p-6 text-center hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer group"
+                    className="upload-zone"
                   >
                     <input 
                       type="file" 
@@ -334,70 +412,60 @@ export default function CreateTaskModal({ onClose }: Props) {
                       ref={fileInputRef} 
                       onChange={handleFileUpload}
                     />
-                    <Upload className="w-8 h-8 text-muted-foreground mb-2 mx-auto group-hover:text-primary transition-all" />
-                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Upload Tactical Data</p>
-                    <p className="text-[10px] text-muted-foreground/50 mt-1 uppercase">Images, PDF, DOCX (MAX 10MB)</p>
+                    <Upload size={24} className="upload-icon mx-auto" />
+                    <p className="upload-text">Click to upload files</p>
+                    <p className="upload-subtext">Images, PDFs, Documents (Max 10MB)</p>
                   </div>
 
                   {attachments.length > 0 && (
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="attachments-grid">
                       {attachments.map((file, idx) => (
-                        <div key={idx} className="flex items-center gap-2 bg-white/5 p-2 rounded-lg border border-white/5 truncate">
-                          <Paperclip className="w-3 h-3 text-primary shrink-0" />
-                          <span className="text-[10px] font-bold uppercase truncate">{file.fileName}</span>
+                        <div key={idx} className="attachment-item">
+                          <Paperclip size={14} className="text-secondary" />
+                          <span>{file.fileName || "Attachment"}</span>
                         </div>
                       ))}
                     </div>
                   )}
 
                   {uploading && (
-                    <div className="flex items-center gap-2 text-primary">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span className="text-[10px] font-black uppercase tracking-widest animate-pulse">Uploading Comms...</span>
+                    <div className="d-flex align-center gap-2" style={{ marginTop: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Uploading...</span>
                     </div>
                   )}
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex items-center justify-between pt-8 border-t border-white/5">
-            <div className="flex gap-4">
-              <div className="flex flex-col">
-                <span className="text-[8px] font-black text-muted-foreground uppercase">Estimated Effort</span>
+            <div className="modal-footer">
+              <div>
+                <label className="form-label" style={{ marginBottom: '0.25rem' }}>Estimated Hours</label>
                 <input 
                   type="number" 
-                  value={formData.estimatedHours} 
+                  value={formData.estimatedHours || ''} 
                   onChange={(e) => setFormData({...formData, estimatedHours: Number(e.target.value)})}
-                  className="w-16 bg-transparent border-none p-0 text-xl font-black text-primary focus:ring-0"
+                  className="effort-input"
+                  placeholder="0"
                 />
               </div>
-            </div>
 
-            <div className="flex gap-4">
-              <button 
-                type="button" 
-                onClick={onClose}
-                className="px-8 py-4 text-xs font-black text-muted-foreground uppercase tracking-widest hover:text-foreground transition-all"
-              >
-                Cancel Mission
-              </button>
-              <motion.button 
-                whileHover={{ scale: 1.05 }} 
-                whileTap={{ scale: 0.95 }} 
-                type="submit" 
-                disabled={loading || uploading}
-                className="relative group overflow-hidden px-10 py-4 bg-primary text-primary-foreground rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-[0_10px_30px_rgba(34,197,94,0.3)] disabled:opacity-50 transition-all font-mono"
-              >
-                <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-                <span className="relative flex items-center gap-3">
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Plus className="w-4 h-4" /> Initialize Protocol</>}
-                </span>
-              </motion.button>
+              <div className="d-flex gap-4">
+                <button type="button" onClick={onClose} className="btn-secondary">
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={loading || uploading}
+                  className="btn-primary d-flex align-center gap-2"
+                >
+                  {loading ? <Loader2 size={16} className="animate-spin" /> : <><Plus size={16} /> Create Task</>}
+                </button>
+              </div>
             </div>
-          </div>
-        </form>
+          </form>
+        </motion.div>
       </motion.div>
-    </motion.div>
+    </AnimatePresence>
   );
 }

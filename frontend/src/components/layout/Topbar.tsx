@@ -1,15 +1,12 @@
 "use client";
-import { useState, useEffect } from "react";
-import { Bell, Moon, Sun, Search } from "lucide-react";
-import api from "@/lib/api";
-import { motion } from "framer-motion";
-import { useSocket } from "@/providers/SocketProvider";
-import { toast } from "sonner";
-import Link from "next/link";
-import Image from "next/image";
-import { useAuthStore } from "@/store/authStore";
+import React, { useState } from "react";
+import { Moon, Sun, Search } from "lucide-react";
 import { useUIStore } from "@/store/uiStore";
+import { useAuthStore } from "@/store/authStore";
+import Link from "next/link";
 import NotificationCenter from "../notifications/NotificationCenter";
+import { getDisplayName, getInitial } from "@/lib/utils";
+import "./layout.css";
 
 interface Props {
   title: string;
@@ -18,37 +15,38 @@ interface Props {
 export default function Topbar({ title }: Props) {
   const { user } = useAuthStore();
   const { theme, toggleTheme } = useUIStore();
+  const [failedAvatarUrls, setFailedAvatarUrls] = useState<Record<string, true>>({});
+
+  const displayName = getDisplayName(user?.name, user?.email);
+  const avatarUrl = user?.avatar && !failedAvatarUrls[user.avatar] ? user.avatar : null;
 
   return (
-    <header className="h-14 flex items-center justify-between px-6 border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-20">
-      <h1 className="text-base font-semibold text-foreground">{title}</h1>
+    <header className="topbar-container">
+      <h1 className="topbar-title">{title}</h1>
 
-      <div className="flex items-center gap-3">
-        {/* Search */}
-        <div className="hidden sm:flex items-center gap-2 bg-secondary border border-border rounded-lg px-3 py-1.5 text-sm text-muted-foreground w-48">
-          <Search className="w-3.5 h-3.5" />
-          <span>Search...</span>
+      <div className="topbar-actions">
+        <div className="topbar-search">
+          <Search size={14} />
+          <input type="text" placeholder="Search analytics, tasks, members..." />
         </div>
 
-        {/* Theme toggle */}
-        <button
-          onClick={toggleTheme}
-          className="p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
-        >
-          {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        <button onClick={toggleTheme} className="btn-icon">
+          {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
         </button>
 
-        {/* Notifications */}
         <NotificationCenter />
 
-        {/* Avatar */}
         {user && (
-          <Link href="/dashboard/profile" className="shrink-0 transition-transform hover:scale-105">
-            <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-primary font-bold text-sm overflow-hidden">
-              {user.avatar ? (
-                <Image src={user.avatar} alt={user.name} width={32} height={32} className="object-cover w-full h-full" />
+          <Link href="/dashboard/profile" className="topbar-avatar-link">
+            <div className="topbar-avatar">
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt={displayName}
+                  onError={() => setFailedAvatarUrls((prev) => ({ ...prev, [avatarUrl]: true }))}
+                />
               ) : (
-                user.name[0].toUpperCase()
+                getInitial(user.name, user.email)
               )}
             </div>
           </Link>

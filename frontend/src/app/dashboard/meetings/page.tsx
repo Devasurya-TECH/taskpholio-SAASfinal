@@ -8,6 +8,7 @@ import { cn, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, parseISO, addMonths, subMonths } from "date-fns";
 import { useSocket } from "@/providers/SocketProvider";
+import { supabase } from "@/lib/supabase";
 
 export default function MeetingsPage() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -24,10 +25,23 @@ export default function MeetingsPage() {
 
   const fetchMeetings = async () => {
     try {
-      const res = await api.get("meetings");
-      setMeetings(res.data.data.meetings || []);
+      const { data, error } = await supabase.from('meetings').select('*').order('scheduled_at', { ascending: true });
+      if (error) throw error;
+      
+      const mapped = (data || []).map(m => ({
+        _id: m.id,
+        title: m.title,
+        description: m.description,
+        startTime: m.scheduled_at,
+        endTime: new Date(new Date(m.scheduled_at).getTime() + 60*60*1000).toISOString(),
+        location: "Virtual HQ",
+        meetingLink: m.link,
+        status: new Date(m.scheduled_at) > new Date() ? 'scheduled' : 'completed',
+        attendees: []
+      }));
+      setMeetings(mapped as any);
     } catch (err) {
-      toast.error("Failed to intercept meeting schedules");
+      toast.error("Failed to sync meeting schedules");
     } finally {
       setLoading(false);
     }
@@ -40,7 +54,6 @@ export default function MeetingsPage() {
         if (prev.some((m) => m._id === meeting._id)) return prev;
         return [...prev, meeting].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
       });
-      toast.info(`New Mission Briefing: ${meeting.title}`);
     });
     return () => { socket.off("NEW_MEETING"); };
   }, [socket]);
@@ -49,16 +62,33 @@ export default function MeetingsPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const res = await api.post("meetings", {
-        ...form,
-        attendees: form.attendees ? form.attendees.split(",").map((s) => s.trim()) : [],
-      });
-      setMeetings((prev) => [res.data.data.meeting, ...prev].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
+      const { data, error } = await supabase.from('meetings').insert({
+         title: form.title,
+         description: form.description || "",
+         scheduled_at: form.startTime,
+         link: form.meetingLink
+      }).select().single();
+
+      if (error) throw error;
+
+      const newMtg = {
+        _id: data.id,
+        title: data.title,
+        description: data.description,
+        startTime: data.scheduled_at,
+        endTime: form.endTime || new Date(new Date(data.scheduled_at).getTime() + 60*60*1000).toISOString(),
+        location: form.location || "Virtual HQ",
+        meetingLink: data.link,
+        status: 'scheduled',
+        attendees: []
+      };
+
+      setMeetings((prev) => [newMtg, ...prev].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()) as any);
       setShowForm(false);
       setForm({ title: "", description: "", startTime: "", endTime: "", location: "", meetingLink: "", attendees: "" });
       toast.success("Meeting Scheduled in Secure Channel");
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Scheduling failure");
+      toast.error(err.message || "Scheduling failure");
     } finally {
       setSubmitting(false);
     }
@@ -68,7 +98,7 @@ export default function MeetingsPage() {
   const meetingDates = meetings.map((m) => parseISO(m.startTime));
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 pb-20">
+    <div className="max-w-7xl mx-auto px-2 md:px-4 xl:px-6 space-y-8 pb-20">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-black text-foreground tracking-tight">Mission Briefings</h1>

@@ -1,11 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Users, ChevronRight, ShieldCheck, Zap, Target, MoreHorizontal, UserPlus } from "lucide-react";
+import { Users, ChevronRight, ShieldCheck, Zap, Target, MoreHorizontal, UserPlus, Search } from "lucide-react";
 import api from "@/lib/api";
 import { Team, User } from "@/lib/types";
-import { cn, getRoleColor } from "@/lib/utils";
+import { cn, getDisplayName, getInitial, getRoleColor } from "@/lib/utils";
 import { toast } from "sonner";
+
+import { supabase } from "@/lib/supabase";
+import { useAdminStore } from "@/store/adminStore";
+import AssembleSquadModal from "@/components/modals/AssembleSquadModal";
 
 interface Hierarchy {
   ceo: User[];
@@ -25,57 +29,109 @@ const StatCard = ({ label, value, icon: Icon, color }: any) => (
   </div>
 );
 
-const UserBadge = ({ user, size = "md" }: { user: User; size?: "sm" | "md" }) => (
-  <motion.div whileHover={{ y: -2 }} className={cn("flex items-center gap-3 bg-secondary/40 border border-border/50 rounded-2xl p-3", size === "sm" ? "p-2" : "p-3")}>
-    <div className={cn("rounded-xl bg-primary/10 flex items-center justify-center text-primary font-black border border-primary/20 shadow-lg shadow-primary/5", size === "sm" ? "w-8 h-8 text-xs" : "w-10 h-10 text-sm")}>
-      {user.name[0]}
+const UserBadge = ({ user, size = "md" }: { user: User | null; size?: "sm" | "md" }) => {
+  if (!user) return (
+    <div className={cn("flex items-center gap-3 bg-secondary/20 border border-border/30 rounded-2xl p-3 opacity-50 italic text-[10px]", size === "sm" ? "p-2" : "p-3")}>
+      No operative assigned
     </div>
-    <div className="flex-1 min-w-0">
-      <p className={cn("font-black text-foreground truncate", size === "sm" ? "text-xs" : "text-sm")}>{user.name}</p>
-      <div className="flex items-center gap-2">
-        <span className={cn("text-[9px] px-1.5 py-0.5 rounded-lg font-black uppercase tracking-tighter border", getRoleColor(user.role))}>
-          {user.role}
-        </span>
-        <span className={cn("w-1.5 h-1.5 rounded-full shadow-[0_0_5px]", user.status === "active" ? "bg-emerald-400 shadow-emerald-400/50" : "bg-orange-400 shadow-orange-400/50")} />
+  );
+  
+  return (
+    <motion.div whileHover={{ y: -2 }} className={cn("flex items-center gap-3 bg-secondary/40 border border-border/50 rounded-2xl p-3 text-left", size === "sm" ? "p-2" : "p-3")}>
+      <div className={cn("rounded-xl bg-primary/10 flex items-center justify-center text-primary font-black border border-primary/20 shadow-lg shadow-primary/5", size === "sm" ? "w-8 h-8 text-xs" : "w-10 h-10 text-sm")}>
+        {getInitial(user.name, user.email)}
       </div>
-    </div>
-  </motion.div>
-);
+      <div className="flex-1 min-w-0">
+        <p className={cn("font-black text-foreground truncate", size === "sm" ? "text-xs" : "text-sm")}>{getDisplayName(user.name, user.email)}</p>
+        <div className="flex items-center gap-2">
+          <span className={cn("text-[9px] px-1.5 py-0.5 rounded-lg font-black uppercase tracking-tighter border", getRoleColor(user.role))}>
+            {user.role || "Operator"}
+          </span>
+          <span className={cn("w-1.5 h-1.5 rounded-full shadow-[0_0_5px]", user.status === "active" ? "bg-emerald-400 shadow-emerald-400/50" : "bg-orange-400 shadow-orange-400/50")} />
+        </div>
+      </div>
+    </motion.div>
+  );
+};
 
 export default function TeamsPage() {
   const [hierarchy, setHierarchy] = useState<Hierarchy | null>(null);
-  const [teams, setTeams] = useState<Team[]>([]);
+  const { teams, fetchTeams, createTeam, isLoading: teamsLoading } = useAdminStore();
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [isAssembleModalOpen, setIsAssembleModalOpen] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      api.get("teams/hierarchy"),
-      api.get("teams"),
-    ]).then(([h, t]) => {
-      setHierarchy(h.data.data.hierarchy);
-      setTeams(t.data.data.teams);
-    }).catch(() => toast.error("Intelligence gathering failed")).finally(() => setLoading(false));
+    fetchData();
   }, []);
 
-  if (loading) return (
-    <div className="space-y-8 animate-pulse">
-      <div className="h-10 w-48 bg-secondary rounded-xl" />
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {[...Array(3)].map((_, i) => <div key={i} className="h-40 bg-secondary rounded-3xl" />)}
+  const fetchData = async () => {
+    try {
+      await fetchTeams();
+      
+      const { data: profiles, error } = await supabase.from('profiles').select('*');
+      if (error) throw error;
+
+      const ceo = (profiles || []).filter(p => p.role?.toLowerCase() === 'ceo').map(p => ({
+        _id: p.id, name: getDisplayName(p.full_name, p.email), email: p.email, role: p.role, avatar: p.avatar_url, status: p.is_active ? 'active' : 'inactive'
+      }));
+      const ctos = (profiles || []).filter(p => p.role?.toLowerCase() === 'cto').map(p => ({
+        _id: p.id, name: getDisplayName(p.full_name, p.email), email: p.email, role: p.role, avatar: p.avatar_url, status: p.is_active ? 'active' : 'inactive'
+      }));
+      const leads = (profiles || []).filter(p => p.team !== null && p.role?.toLowerCase() !== 'ceo' && p.role?.toLowerCase() !== 'cto').map(p => ({
+        _id: p.id, name: getDisplayName(p.full_name, p.email), email: p.email, role: 'Lead', avatar: p.avatar_url, status: p.is_active ? 'active' : 'inactive'
+      }));
+
+      setHierarchy({ ceo: ceo as any, ctos: ctos as any, leads: leads as any });
+    } catch (err) {
+      toast.error("Intelligence gathering failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAssembleTeam = () => {
+    setIsAssembleModalOpen(true);
+  };
+
+  const filteredTeams = teams.filter(t => 
+    t.name.toLowerCase().includes(search.toLowerCase()) ||
+    t.description?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  if (loading || teamsLoading) return (
+    <div className="max-w-7xl mx-auto px-2 md:px-4 xl:px-6 space-y-12 pb-20">
+      <div className="space-y-8 animate-pulse">
+        <div className="h-10 w-48 bg-secondary rounded-xl" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[...Array(3)].map((_, i) => <div key={i} className="h-40 bg-secondary rounded-[2rem]" />)}
+        </div>
       </div>
     </div>
   );
 
   return (
-    <div className="max-w-7xl mx-auto space-y-12 pb-20">
-      <div className="flex items-center justify-between">
-        <div>
+    <div className="max-w-7xl mx-auto px-2 md:px-4 xl:px-6 space-y-12 pb-20">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="min-w-0">
           <h1 className="text-3xl font-black text-foreground tracking-tight">Organization Command</h1>
           <p className="text-muted-foreground font-medium uppercase tracking-widest text-[10px] mt-1">Operational Structure & Hierarchy</p>
         </div>
-        <button className="flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-2xl font-black text-xs hover:scale-105 transition-transform shadow-xl shadow-primary/20 tracking-widest">
-           ASSEMBLE TEAM
-        </button>
+        <div className="flex w-full md:w-auto flex-wrap items-center justify-end gap-3 md:gap-4">
+          <div className="relative group w-full md:w-64">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search Squads..."
+              className="bg-secondary/40 border border-border/50 rounded-2xl pl-12 pr-4 py-3 text-xs font-black focus:outline-none focus:ring-2 focus:ring-primary/50 w-full transition-all"
+            />
+          </div>
+          <button onClick={handleAssembleTeam} className="flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3.5 rounded-2xl font-black text-xs hover:scale-105 transition-transform shadow-xl shadow-primary/20 tracking-widest whitespace-nowrap">
+             ASSEMBLE TEAM
+          </button>
+        </div>
       </div>
 
       {/* Strategic Hierarchy */}
@@ -122,7 +178,7 @@ export default function TeamsPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-          {teams.map((team, idx) => (
+          {filteredTeams.map((team, idx) => (
             <motion.div
               key={team._id}
               initial={{ opacity: 0, y: 30 }}
@@ -170,9 +226,9 @@ export default function TeamsPage() {
                       key={m._id}
                       whileHover={{ scale: 1.2, zIndex: 10, y: -5 }}
                       className="w-10 h-10 rounded-xl bg-secondary border-2 border-background flex items-center justify-center text-primary font-black text-xs shadow-xl cursor-help"
-                      title={m.name}
+                      title={getDisplayName(m.name, m.email)}
                     >
-                      {m.name[0]}
+                      {getInitial(m.name, m.email)}
                     </motion.div>
                   ))}
                   {team.members.length > 5 && (
@@ -189,6 +245,11 @@ export default function TeamsPage() {
           ))}
         </div>
       </section>
+
+      <AssembleSquadModal 
+        isOpen={isAssembleModalOpen} 
+        onClose={() => setIsAssembleModalOpen(false)} 
+      />
     </div>
   );
 }

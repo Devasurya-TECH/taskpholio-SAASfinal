@@ -1,9 +1,9 @@
 "use client";
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, ChevronRight, Users, User as UserIcon, Check } from "lucide-react";
+import { Search, ChevronRight, Users, Check } from "lucide-react";
 import { User, Team } from "@/lib/types";
-import { cn, getRoleColor } from "@/lib/utils";
+import { cn, getDisplayName, getInitial, getRoleColor } from "@/lib/utils";
 
 interface Props {
   users: User[];
@@ -31,7 +31,7 @@ export default function TeamTreeSelector({ users, teams, selected, onChange }: P
 
   const filteredCTOs = useMemo(() => {
     if (!search) return ctos;
-    return ctos.filter((u) => u.name.toLowerCase().includes(search.toLowerCase()));
+    return ctos.filter((u) => getDisplayName(u.name, u.email).toLowerCase().includes(search.toLowerCase()));
   }, [ctos, search]);
 
   const toggleUser = (id: string) => {
@@ -89,9 +89,9 @@ export default function TeamTreeSelector({ users, teams, selected, onChange }: P
                 onClick={() => toggleUser(id)}
               >
                 <span className="w-4 h-4 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold">
-                  {user.name[0]}
+                  {getInitial(user.name, user.email)}
                 </span>
-                {user.name}
+                {getDisplayName(user.name, user.email)}
                 <span className="text-primary/50">×</span>
               </motion.span>
             );
@@ -150,14 +150,22 @@ export default function TeamTreeSelector({ users, teams, selected, onChange }: P
                   transition={{ duration: 0.15 }}
                   className="overflow-hidden ml-5 mt-1 space-y-0.5"
                 >
-                  {team.members.map((member) => (
-                    <UserRow
-                      key={member._id}
-                      user={member}
-                      selected={selected.includes(member._id)}
-                      onToggle={() => toggleUser(member._id)}
-                    />
-                  ))}
+                  {team.members.map((member) => {
+                    const memberObj = typeof member === "string"
+                      ? users.find((u) => u._id === member)
+                      : member;
+
+                    if (!memberObj) return null;
+
+                    return (
+                      <UserRow
+                        key={memberObj._id}
+                        user={memberObj}
+                        selected={selected.includes(memberObj._id)}
+                        onToggle={() => toggleUser(memberObj._id)}
+                      />
+                    );
+                  })}
                   {team.members.length === 0 && (
                     <p className="text-xs text-muted-foreground px-2 py-1">No members</p>
                   )}
@@ -172,7 +180,7 @@ export default function TeamTreeSelector({ users, teams, selected, onChange }: P
           <div className="p-2">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-2 mb-1">Unassigned</p>
             {unassigned
-              .filter((u) => !search || u.name.toLowerCase().includes(search.toLowerCase()))
+              .filter((u) => !search || getDisplayName(u.name, u.email).toLowerCase().includes(search.toLowerCase()))
               .map((u) => (
                 <UserRow key={u._id} user={u} selected={selected.includes(u._id)} onToggle={() => toggleUser(u._id)} />
               ))}
@@ -197,10 +205,10 @@ function UserRow({ user, selected, onToggle }: { user: User; selected: boolean; 
       )}
     >
       <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-primary text-[10px] font-bold shrink-0">
-        {user.name[0]}
+        {getInitial(user.name, user.email)}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-foreground truncate">{user.name}</p>
+        <p className="text-xs font-medium text-foreground truncate">{getDisplayName(user.name, user.email)}</p>
       </div>
       <span className={cn("text-[10px] px-1.5 py-0.5 rounded font-medium", getRoleColor(user.role))}>{user.role}</span>
       <div className={cn(

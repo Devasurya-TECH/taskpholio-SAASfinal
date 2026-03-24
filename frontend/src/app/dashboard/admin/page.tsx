@@ -7,7 +7,7 @@ import {
 import { useAdminStore } from "@/store/adminStore";
 import { useAuthStore } from "@/store/authStore";
 import { User, Team } from "@/lib/types";
-import { cn, getRoleColor, formatDate, isAdmin } from "@/lib/utils";
+import { cn, getRoleColor, formatDate, getDisplayName, getInitial, isAdmin } from "@/lib/utils";
 import { toast } from "sonner";
 
 type Tab = "users" | "teams";
@@ -43,7 +43,9 @@ function UserModal({ user, allTeams, onClose }: { user?: User; allTeams: Team[];
       }
       onClose();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed");
+      console.error("Creation error:", err);
+      const msg = err.message || err.error?.message || "Creation failed";
+      toast.error(msg);
     } finally { setLoading(false); }
   };
 
@@ -64,6 +66,9 @@ function UserModal({ user, allTeams, onClose }: { user?: User; allTeams: Team[];
               <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email"
                 className="w-full bg-secondary border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
               <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password (min 6)"
+                minLength={6}
+                autoComplete="new-password"
+                title="Password must be at least 6 characters"
                 className="w-full bg-secondary border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
             </>
           )}
@@ -147,7 +152,7 @@ function TeamModal({ team, allUsers, onClose }: { team?: Team; allUsers: User[];
             <select value={managerId} onChange={(e) => setManagerId(e.target.value)}
               className="w-full bg-secondary border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50">
               <option value="">Select manager...</option>
-              {managers.map((u) => <option key={u._id} value={u._id}>{u.name} ({u.role})</option>)}
+              {managers.map((u) => <option key={u._id} value={u._id}>{getDisplayName(u.name, u.email)} ({u.role})</option>)}
             </select>
           </div>
           <div>
@@ -156,7 +161,7 @@ function TeamModal({ team, allUsers, onClose }: { team?: Team; allUsers: User[];
               {members.map((u) => (
                 <label key={u._id} className="flex items-center gap-2 px-3 py-2 hover:bg-secondary cursor-pointer transition-colors">
                   <input type="checkbox" checked={memberIds.includes(u._id)} onChange={() => toggleMember(u._id)} className="accent-primary" />
-                  <span className="text-sm text-foreground">{u.name}</span>
+                  <span className="text-sm text-foreground">{getDisplayName(u.name, u.email)}</span>
                 </label>
               ))}
               {members.length === 0 && <p className="text-xs text-muted-foreground text-center py-3">No members registered</p>}
@@ -189,7 +194,8 @@ export default function AdminPage() {
   useEffect(() => { fetchUsers(); fetchTeams(); }, []);
 
   const filteredUsers = users.filter((u) => {
-    const matchSearch = u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
+    const displayName = getDisplayName(u.name, u.email);
+    const matchSearch = displayName.toLowerCase().includes(search.toLowerCase()) || (u.email || "").toLowerCase().includes(search.toLowerCase());
     const matchRole = !roleFilter || u.role === roleFilter;
     const matchTeam = !teamFilter || u.team?._id === teamFilter;
     return matchSearch && matchRole && matchTeam;
@@ -215,7 +221,7 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-7xl mx-auto px-2 md:px-4 xl:px-6 space-y-6 pb-20">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-primary/10 rounded-xl"><ShieldCheck className="w-5 h-5 text-primary" /></div>
@@ -275,8 +281,8 @@ export default function AdminPage() {
                   <motion.div key={u._id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
                     className="grid grid-cols-[1fr_1fr_auto_1fr_auto_auto] gap-4 items-center px-5 py-3 border-b border-border last:border-0 hover:bg-secondary/30 transition-colors">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-bold shrink-0">{u.name[0]}</div>
-                      <span className="text-sm font-medium text-foreground truncate">{u.name}</span>
+                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-bold shrink-0">{getInitial(u.name, u.email)}</div>
+                      <span className="text-sm font-medium text-foreground truncate">{getDisplayName(u.name, u.email)}</span>
                     </div>
                     <span className="text-sm text-muted-foreground truncate">{u.email}</span>
                     <span className={cn("text-xs px-2 py-1 rounded font-medium w-20 text-center", getRoleColor(u.role))}>{u.role}</span>
@@ -331,8 +337,8 @@ export default function AdminPage() {
                 <div className="mb-3">
                   <p className="text-xs text-muted-foreground mb-1.5">Manager</p>
                   <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-primary text-[10px] font-bold">{team.manager?.name?.[0]}</div>
-                    <span className="text-sm font-medium text-foreground">{team.manager?.name}</span>
+                    <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-primary text-[10px] font-bold">{getInitial(team.manager?.name, team.manager?.email)}</div>
+                    <span className="text-sm font-medium text-foreground">{getDisplayName(team.manager?.name, team.manager?.email)}</span>
                     <span className={cn("text-[10px] px-1.5 py-0.5 rounded font-medium", getRoleColor(team.manager?.role))}>{team.manager?.role}</span>
                   </div>
                 </div>
@@ -340,7 +346,7 @@ export default function AdminPage() {
                   <p className="text-xs text-muted-foreground mb-1.5">{team.members.length} members</p>
                   <div className="flex -space-x-2">
                     {team.members.slice(0, 6).map((m) => (
-                      <div key={m._id} title={m.name} className="w-7 h-7 rounded-full bg-primary/20 border-2 border-card flex items-center justify-center text-primary text-xs font-bold">{m.name[0]}</div>
+                      <div key={m._id} title={getDisplayName(m.name, m.email)} className="w-7 h-7 rounded-full bg-primary/20 border-2 border-card flex items-center justify-center text-primary text-xs font-bold">{getInitial(m.name, m.email)}</div>
                     ))}
                     {team.members.length > 6 && (
                       <div className="w-7 h-7 rounded-full bg-secondary border-2 border-card flex items-center justify-center text-muted-foreground text-xs font-medium">+{team.members.length - 6}</div>

@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { Zap, Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
 import { toast } from "sonner";
+import "../auth.css";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -27,80 +28,76 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="auth-container">
       {/* Background glow */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
-      </div>
+      <div className="auth-glow-bg" />
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="w-full max-w-md"
+        className="auth-card-wrapper"
       >
         {/* Logo */}
-        <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="glow w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
-            <Zap className="w-5 h-5 text-primary" />
+        <div className="auth-logo-header">
+          <div className="auth-logo-icon glow">
+            <Zap size={20} />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-foreground">Taskpholio</h1>
-            <p className="text-xs text-muted-foreground">Team Management Platform</p>
+            <h1 className="auth-logo-title">Taskpholio</h1>
+            <p className="auth-logo-subtitle">Team Management Platform</p>
           </div>
         </div>
 
         {/* Card */}
-        <div className="glass rounded-2xl p-8 space-y-6">
+        <div className="auth-card glass">
           <div>
-            <h2 className="text-2xl font-bold text-foreground">Welcome back</h2>
-            <p className="text-muted-foreground text-sm mt-1">Sign in to your account to continue</p>
+            <h2 className="auth-card-title">Welcome back</h2>
+            <p className="auth-card-subtitle">Sign in to your account to continue</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Email</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <form onSubmit={handleSubmit} className="auth-form">
+            <div className="auth-input-group">
+              <label className="auth-label">Email</label>
+              <div className="auth-input-wrapper">
+                <Mail className="auth-input-icon" size={16} />
                 <input
                   type="email"
                   placeholder="you@company.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full bg-secondary border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all"
+                  className="auth-input"
                 />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Password</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <div className="auth-input-group">
+              <label className="auth-label">Password</label>
+              <div className="auth-input-wrapper">
+                <Lock className="auth-input-icon" size={16} />
                 <input
                   type="password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full bg-secondary border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all"
+                  className="auth-input"
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 cursor-pointer group">
+            <div className="auth-options">
+              <label className="auth-checkbox-label group">
                 <input
                   type="checkbox"
                   checked={staySignedIn}
                   onChange={(e) => setStaySignedIn(e.target.checked)}
-                  className="w-4 h-4 rounded border-border bg-secondary text-primary focus:ring-primary/50"
+                  className="auth-checkbox"
                 />
-                <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">
-                  Stay signed in
-                </span>
+                <span>Stay signed in</span>
               </label>
-              <Link href="/forgot-password" title="forgot-password" className="text-sm text-primary hover:underline font-medium">
+              <Link href="/forgot-password" title="forgot-password" className="auth-link">
                 Forgot password?
               </Link>
             </div>
@@ -110,19 +107,19 @@ export default function LoginPage() {
               whileTap={{ scale: 0.99 }}
               type="submit"
               disabled={isLoading}
-              className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg py-2.5 text-sm transition-colors disabled:opacity-60"
+              className="auth-submit-btn"
             >
               {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 size={16} className="animate-spin" />
               ) : (
-                <>Sign In <ArrowRight className="w-4 h-4" /></>
+                <>Sign In <ArrowRight size={16} /></>
               )}
             </motion.button>
           </form>
 
-          <p className="text-center text-sm text-muted-foreground">
+          <p className="auth-footer">
             Don&apos;t have an account?{" "}
-            <Link href="/register" className="text-primary hover:underline font-medium">
+            <Link href="/register" className="auth-link">
               Create one
             </Link>
           </p>

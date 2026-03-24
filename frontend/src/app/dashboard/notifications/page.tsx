@@ -7,18 +7,73 @@ import { Notification } from "@/lib/types";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { toast } from "sonner";
 
+import { supabase } from "@/lib/supabase";
+
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchNotifications();
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    let channel: any = null;
+
+    const subscribeRealtime = async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id;
+      if (!userId || !mounted) return;
+
+      channel = supabase
+        .channel(`notifications-page-${userId}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
+          () => fetchNotifications()
+        )
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
+          () => fetchNotifications()
+        )
+        .subscribe();
+    };
+
+    subscribeRealtime();
+
+    return () => {
+      mounted = false;
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, []);
+
   const fetchNotifications = async () => {
     try {
-      const res = await api.get("notifications");
-      setNotifications(res.data.data.notifications || []);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id;
+      if (!userId) {
+        setNotifications([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq("user_id", userId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      
+      const mapped = (data || []).map(n => ({
+        _id: n.id,
+        type: n.type,
+        title: n.title,
+        message: n.body,
+        read: n.read,
+        createdAt: n.created_at
+      }));
+      setNotifications(mapped);
     } catch (err) {
       toast.error("Failed to intercept system alerts");
     } finally {
@@ -28,7 +83,8 @@ export default function NotificationsPage() {
 
   const markAsRead = async (id: string) => {
     try {
-      await api.patch(`notifications/${id}/read`);
+      const { error } = await supabase.from('notifications').update({ read: true }).eq('id', id);
+      if (error) throw error;
       setNotifications(prev => prev.map(n => n._id === id ? { ...n, read: true } : n));
     } catch (err) {
       toast.error("Protocol update failed");
@@ -37,7 +93,10 @@ export default function NotificationsPage() {
 
   const clearAll = async () => {
     try {
-      await api.delete("notifications/clear");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await supabase.from('notifications').delete().eq('user_id', session.user.id);
+      }
       setNotifications([]);
       toast.success("Intelligence cleared");
     } catch (err) {
@@ -46,11 +105,15 @@ export default function NotificationsPage() {
   };
 
   const getIcon = (type: string) => {
-    switch (type) {
+    const kind = (type || "").toUpperCase();
+    switch (kind) {
       case "TASK_ASSIGNED": return <Rocket className="w-4 h-4 text-blue-400" />;
+      case "TASK_UPDATED": return <Clock className="w-4 h-4 text-amber-400" />;
       case "COMMENT_ADDED": return <Zap className="w-4 h-4 text-yellow-400" />;
       case "SUBTASK_UPDATED": return <Check className="w-4 h-4 text-emerald-400" />;
       case "MEETING_READY": return <Clock className="w-4 h-4 text-purple-400" />;
+      case "MEETING_SCHEDULED": return <Clock className="w-4 h-4 text-purple-400" />;
+      case "MEMBER_ADDED": return <ShieldAlert className="w-4 h-4 text-emerald-400" />;
       default: return <ShieldAlert className="w-4 h-4 text-primary" />;
     }
   };

@@ -7,6 +7,7 @@ export interface User {
   team?: any;
   status: "active" | "away" | "busy";
   lastActive: string;
+  createdAt: string;
 }
 
 export interface Attachment {
@@ -42,11 +43,15 @@ export interface Task {
   _id: string;
   title: string;
   description: string;
-  status: "pending" | "in-progress" | "completed" | "cancelled";
-  priority: "low" | "medium" | "high" | "urgent";
-  assignedTo: User;
-  team: any;
-  createdBy: User;
+  status: "pending" | "in-progress" | "completed" | "blocked" | "cancelled";
+  priority: "low" | "medium" | "high" | "urgent" | "critical";
+  assignedTo?: User | null;
+  assignedToId?: string | null;
+  team?: any;
+  teamId?: string | null;
+  assignmentType?: "individual" | "team" | "hybrid";
+  createdBy?: User | null;
+  visibility?: "personal" | "team" | "all";
   dueDate?: string;
   attachments: Attachment[];
   subtasks: Subtask[];
@@ -77,7 +82,19 @@ export interface Meeting {
 export interface Notification {
   _id: string;
   user: string;
-  type: "TASK_ASSIGNED" | "COMMENT_ADDED" | "SUBTASK_UPDATED" | "MEETING_READY" | "SYSTEM";
+  type:
+    | "TASK_ASSIGNED"
+    | "TASK_UPDATED"
+    | "TASK_COMPLETED"
+    | "COMMENT_ADDED"
+    | "SUBTASK_UPDATED"
+    | "MEETING_READY"
+    | "SYSTEM"
+    | "task_assigned"
+    | "task_updated"
+    | "task_completed"
+    | "member_added"
+    | "meeting_scheduled";
   title: string;
   message: string;
   read: boolean;
@@ -89,7 +106,7 @@ export interface Team {
   _id: string;
   name: string;
   description: string;
-  lead: User;
+  manager: User;
   members: User[];
   stats: {
     totalTasks: number;

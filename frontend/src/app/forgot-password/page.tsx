@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { Zap, Mail, ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
 import api from "@/lib/api";
 import { toast } from "sonner";
+import "../auth.css";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -27,52 +28,49 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      {/* Background glow */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
-      </div>
+    <div className="auth-container">
+      <div className="auth-glow-bg" />
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="w-full max-w-md"
+        className="auth-card-wrapper"
       >
         {/* Logo */}
-        <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="glow w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
-            <Zap className="w-5 h-5 text-primary" />
+        <div className="auth-logo-header">
+          <div className="auth-logo-icon glow">
+            <Zap size={20} />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-foreground">Taskpholio</h1>
-            <p className="text-xs text-muted-foreground">Recovery Center</p>
+            <h1 className="auth-logo-title">Taskpholio</h1>
+            <p className="auth-logo-subtitle">Recovery Center</p>
           </div>
         </div>
 
         {/* Card */}
-        <div className="glass rounded-2xl p-8 space-y-6">
+        <div className="auth-card glass">
           {!isSent ? (
             <>
               <div>
-                <h2 className="text-2xl font-bold text-foreground">Forgot password?</h2>
-                <p className="text-muted-foreground text-sm mt-1">
+                <h2 className="auth-card-title">Forgot password?</h2>
+                <p className="auth-card-subtitle">
                   Enter your email address and we&apos;ll send you a link to reset your password.
                 </p>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Email</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <form onSubmit={handleSubmit} className="auth-form">
+                <div className="auth-input-group">
+                  <label className="auth-label">Email</label>
+                  <div className="auth-input-wrapper">
+                    <Mail className="auth-input-icon" size={16} />
                     <input
                       type="email"
                       placeholder="you@company.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
-                      className="w-full bg-secondary border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all"
+                      className="auth-input"
                     />
                   </div>
                 </div>
@@ -82,10 +80,10 @@ export default function ForgotPasswordPage() {
                   whileTap={{ scale: 0.99 }}
                   type="submit"
                   disabled={isLoading}
-                  className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg py-2.5 text-sm transition-colors disabled:opacity-60"
+                  className="auth-submit-btn"
                 >
                   {isLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 size={16} className="animate-spin" />
                   ) : (
                     "Send Reset Link"
                   )}
@@ -93,30 +91,37 @@ export default function ForgotPasswordPage() {
               </form>
             </>
           ) : (
-            <div className="text-center space-y-4 py-4">
-              <div className="w-16 h-16 bg-success/10 border border-success/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle2 className="w-8 h-8 text-success" />
+            <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+              <div style={{ 
+                width: '4rem', height: '4rem', backgroundColor: 'rgba(0,180,0,0.1)', 
+                border: '1px solid rgba(0,180,0,0.2)', borderRadius: '50%', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                margin: '0 auto 1rem auto' 
+              }}>
+                <CheckCircle2 size={32} color="#00dd00" />
               </div>
-              <h2 className="text-2xl font-bold text-foreground">Email Sent!</h2>
-              <p className="text-muted-foreground text-sm">
-                We&apos;ve sent a password reset link to <span className="text-foreground font-medium">{email}</span>. 
+              <h2 className="auth-card-title">Email Sent!</h2>
+              <p className="auth-card-subtitle">
+                We&apos;ve sent a password reset link to <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{email}</span>. 
                 Please check your inbox.
               </p>
               <button 
                 onClick={() => setIsSent(false)}
-                className="text-primary hover:underline font-medium text-sm mt-4 block mx-auto"
+                className="auth-link"
+                style={{ marginTop: '1rem', background: 'none', border: 'none', cursor: 'pointer' }}
               >
                 Didn&apos;t receive the email? Try again
               </button>
             </div>
           )}
 
-          <div className="pt-4 border-t border-border">
+          <div style={{ paddingTop: '1rem', borderTop: '1px solid var(--border-color)', marginTop: '1.5rem', textAlign: 'center' }}>
             <Link 
               href="/login" 
-              className="flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors group"
+              className="auth-link"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', color: 'var(--text-secondary)' }}
             >
-              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+              <ArrowLeft size={16} />
               Back to Sign In
             </Link>
           </div>

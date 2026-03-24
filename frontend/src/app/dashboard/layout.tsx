@@ -3,12 +3,15 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useTaskStore } from "@/store/taskStore";
+import { useNotificationStore } from "@/store/notificationStore";
+import { registerPushSubscription } from "@/lib/pushSubscription";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 import { usePathname } from "next/navigation";
+import "@/components/layout/layout.css";
 
 const pageTitles: Record<string, string> = {
-  "/dashboard": "Dashboard",
+  "/dashboard": "Overview",
   "/dashboard/tasks": "Tasks",
   "/dashboard/timeline": "Timeline",
   "/dashboard/teams": "Teams",
@@ -38,7 +41,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     
     // Fetch fresh user data on mount
     fetchMe();
-  }, []);
+  }, [fetchMe, router]);
+
+  const { initRealtimeTasks } = useTaskStore();
+  const { initRealtime } = useNotificationStore();
 
   useEffect(() => {
     if (isMounted && !isAuthenticated && !token) {
@@ -46,25 +52,40 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [isMounted, isAuthenticated, token, router]);
 
-  // 10-second silent background polling
   useEffect(() => {
     if (!isAuthenticated) return;
-    const intervalId = setInterval(() => {
-      fetchTasks(true, true);
-    }, 10000);
-    return () => clearInterval(intervalId);
-  }, [isAuthenticated, fetchTasks]);
+
+    registerPushSubscription().catch((error) => {
+      console.error("Push registration failed:", error);
+    });
+  }, [isAuthenticated]);
+
+  // Supabase Realtime Subscriptions
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    
+    // Initialize real-time listeners for updates
+    initRealtimeTasks();
+    
+    // Initialize notification real-time listener if we have the user
+    const subUser = useAuthStore.getState().user;
+    if (subUser?._id) {
+      initRealtime(subUser._id);
+    }
+    
+    // Cleanup subscriptions automatically handled or we can just leave them
+  }, [isAuthenticated, initRealtimeTasks, initRealtime]);
 
   if (!isMounted) return null; // Prevent hydration flash
 
-  const title = pageTitles[pathname] || "Taskpholio";
+  const title = pageTitles[pathname] || "Dashboard";
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="dashboard-container">
       <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="dashboard-main">
         <Topbar title={title} />
-        <main className="flex-1 overflow-y-auto p-6 animate-fade-in">
+        <main className="dashboard-content">
           {children}
         </main>
       </div>

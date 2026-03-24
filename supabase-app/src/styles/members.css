@@ -1,0 +1,65 @@
+.members-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.credential-reveal {
+  background: var(--lime-dim);
+  border: 1px solid var(--lime-border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  margin-top: 16px;
+}
+.credential-reveal__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--lime);
+  margin-bottom: 4px;
+}
+.credential-reveal__warning {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+}
+.credential-reveal__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+}
+.credential-reveal__row:last-child { margin-bottom: 0; }
+.credential-reveal__row .label {
+  font-family: var(--font-data);
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  width: 70px;
+}
+.credential-reveal__row .value {
+  font-family: var(--font-data);
+  font-size: 12px;
+  color: var(--text-primary);
+  flex: 1;
+}
+.credential-reveal__row button {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  transition: color 150ms;
+}
+.credential-reveal__row button:hover { color: var(--accent); }
+
+.member-table-wrap {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}

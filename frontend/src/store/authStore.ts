@@ -3,6 +3,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { User } from "@/lib/types";
 import api from "@/lib/api";
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
+import { getDisplayName } from "@/lib/utils";
 
 interface AuthState {
   user: User | null;
@@ -30,16 +33,56 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (email, password, staySignedIn = true) => {
         set({ isLoading: true, staySignedIn });
+        console.log(`[AUTH] Attempting login for: ${email}`);
         try {
-          const res = await api.post("auth/login", { email, password });
-          const token = res.data.data.token;
-          const user = res.data.data.user;
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+          
+          if (error) {
+            console.error("[AUTH] Supabase Auth Error:", error.message);
+            throw error;
+          }
+
+          const { session, user: authUser } = data;
+          console.log(`[AUTH] Auth success, user ID: ${authUser.id}`);
+          
+          // Fetch the profile from the profiles table
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', authUser.id)
+            .single();
+
+          if (profileError) {
+            console.error("[AUTH] Profile fetch error:", profileError.message);
+            throw profileError;
+          }
+
+          console.log("[AUTH] Profile fetched successfully:", profile.role);
+
+          const roleMap: Record<string, any> = {
+            'ceo': 'CEO',
+            'cto': 'CTO',
+            'member': 'Member'
+          };
+
+          const user: User = {
+            _id: profile.id,
+            name: getDisplayName(profile.full_name, profile.email),
+            email: profile.email,
+            role: roleMap[profile.role.toLowerCase()] || "Member",
+            status: "active",
+            lastActive: new Date().toISOString(),
+            team: profile.team,
+            avatar: profile.avatar_url
+          };
           
           const storage = staySignedIn ? localStorage : sessionStorage;
-          storage.setItem("taskpholio_token", token);
+          storage.setItem("taskpholio_token", session.access_token);
           
-          set({ user, token, isAuthenticated: true, isLoading: false });
+          set({ user, token: session.access_token, isAuthenticated: true, isLoading: false });
+          console.log("[AUTH] Login state updated for user:", user.name);
         } catch (err: any) {
+          console.error("[AUTH] Login failed:", err.message);
           set({ isLoading: false });
           throw err;
         }
@@ -48,15 +91,49 @@ export const useAuthStore = create<AuthState>()(
       register: async (name, email, password, role, team, staySignedIn = true) => {
         set({ isLoading: true, staySignedIn });
         try {
-          const payload = team ? { name, email, password, role, team } : { name, email, password, role };
-          const res = await api.post("auth/register", payload);
-          const token = res.data.data.token;
-          const user = res.data.data.user;
+          const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              data: {
+                full_name: name,
+                role: role.toLowerCase() // "cto", "ceo", "member"
+              }
+            }
+          });
+
+          if (error) throw error;
+          
+          if (!data.session) {
+            toast.info("Registration successful. Please check your email for confirmation.");
+            set({ isLoading: false });
+            return;
+          }
+
+          // If auto-login is enabled by Supabase
+          const { session, user: authUser } = data;
+          
+          const roleMap: Record<string, any> = {
+            'ceo': 'CEO',
+            'cto': 'CTO',
+            'member': 'Member'
+          };
+
+          const userObj: User = {
+            _id: authUser.id,
+            name: getDisplayName(name, email),
+            email: email,
+            role: roleMap[role.toLowerCase()] || "Member",
+            status: "active",
+            lastActive: new Date().toISOString(),
+            team: team,
+            avatar: null
+          };
           
           const storage = staySignedIn ? localStorage : sessionStorage;
-          storage.setItem("taskpholio_token", token);
+          storage.setItem("taskpholio_token", session.access_token);
           
-          set({ user, token, isAuthenticated: true, isLoading: false });
+          set({ user: userObj, token: session.access_token, isAuthenticated: true, isLoading: false });
         } catch (err: any) {
           set({ isLoading: false });
           throw err;
@@ -65,8 +142,29 @@ export const useAuthStore = create<AuthState>()(
 
       fetchMe: async () => {
         try {
-          const res = await api.get("auth/me");
-          set({ user: res.data.data.user, isAuthenticated: true });
+          const { data: { user: authUser }, error } = await supabase.auth.getUser();
+          if (error || !authUser) throw error || new Error("No user");
+
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', authUser.id)
+            .single();
+
+          if (profileError) throw profileError;
+
+          const user: User = {
+            _id: profile.id,
+            name: getDisplayName(profile.full_name, profile.email),
+            email: profile.email,
+            role: profile.role.toUpperCase() as any,
+            status: "active",
+            lastActive: new Date().toISOString(),
+            team: profile.team,
+            avatar: profile.avatar_url
+          };
+
+          set({ user, isAuthenticated: true });
         } catch (error) {
           set({ user: null, token: null, isAuthenticated: false });
           localStorage.removeItem("taskpholio_token");
@@ -80,7 +178,7 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         try {
-          await api.post("auth/logout");
+          await supabase.auth.signOut();
         } catch (err) {
           console.error("LOGOUT ERROR:", err);
         } finally {
@@ -127,7 +225,7 @@ export const useAuthStore = create<AuthState>()(
           sessionStorage.removeItem(name);
         },
       },
-      partialize: (state) => ({ token: state.token, user: state.user, staySignedIn: state.staySignedIn }),
+      partialize: (state) => ({ token: state.token, user: state.user, staySignedIn: state.staySignedIn } as any),
     }
   )
 );

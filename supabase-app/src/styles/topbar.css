@@ -1,0 +1,28 @@
+.topbar {
+  height: 54px;
+  min-height: 54px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 12px;
+}
+.topbar__breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.topbar__breadcrumb-current {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.topbar__spacer { flex: 1; }
+.topbar__actions { display: flex; align-items: center; gap: 8px; }
+.topbar__date {
+  font-family: var(--font-data);
+  font-size: 11px;
+  color: var(--text-muted);
+}

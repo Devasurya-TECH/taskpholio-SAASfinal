@@ -23,12 +23,15 @@ export default function NotificationCenter() {
   }, []);
 
   const getIcon = (type: string) => {
-    switch (type) {
+    const kind = (type || "").toUpperCase();
+    switch (kind) {
       case 'TASK_ASSIGNED': return <Calendar className="w-4 h-4 text-blue-400" />;
       case 'TASK_UPDATED': return <Play className="w-4 h-4 text-amber-400" />;
       case 'TASK_COMPLETED': return <CheckCircle2 className="w-4 h-4 text-emerald-400" />;
       case 'TASK_COMMENT': return <MessageSquare className="w-4 h-4 text-primary" />;
+      case 'MEMBER_ADDED': return <ShieldCheck className="w-4 h-4 text-emerald-400" />;
       case 'MEETING_READY': return <AlertCircle className="w-4 h-4 text-red-400" />;
+      case 'MEETING_SCHEDULED': return <Calendar className="w-4 h-4 text-purple-400" />;
       default: return <Bell className="w-4 h-4 text-muted-foreground" />;
     }
   };

@@ -1,9 +1,7 @@
-import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+export function cn(...classes: (string | undefined | null | false)[]) {
+  return classes.filter(Boolean).join(" ");
 }
+
 
 export function formatDate(date: string | Date): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -56,5 +54,21 @@ export function getRoleColor(role: string): string {
 }
 
 export function isAdmin(role: string): boolean {
-  return role === "CEO" || role === "CTO";
+  const r = role?.toLowerCase();
+  return r === "ceo" || r === "cto";
+}
+
+export function getDisplayName(name?: string | null, email?: string | null): string {
+  const normalizedName = (name || "").trim();
+  if (normalizedName) return normalizedName;
+
+  const normalizedEmail = (email || "").trim();
+  if (normalizedEmail) return normalizedEmail.split("@")[0];
+
+  return "User";
+}
+
+export function getInitial(name?: string | null, email?: string | null): string {
+  const displayName = getDisplayName(name, email);
+  return displayName.charAt(0).toUpperCase();
 }

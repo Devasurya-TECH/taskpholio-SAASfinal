@@ -1,6 +1,6 @@
 "use client";
 import { useAuthStore } from "@/store/authStore";
-import { getRoleColor, cn } from "@/lib/utils";
+import { getRoleColor, cn, getDisplayName, getInitial } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { Shield, Zap, Settings as SettingsIcon, Info, Cpu, Globe, Lock, Clock } from "lucide-react";
 
@@ -21,6 +21,8 @@ const SettingItem = ({ icon: Icon, label, value, sub }: any) => (
 
 export default function SettingsPage() {
   const { user } = useAuthStore();
+  const displayName = getDisplayName(user?.name, user?.email);
+  const initial = getInitial(user?.name, user?.email);
 
   return (
     <div className="max-w-4xl mx-auto space-y-12 pb-20 p-4 md:p-8">
@@ -36,9 +38,9 @@ export default function SettingsPage() {
             <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="relative z-10">
               <div className="w-24 h-24 rounded-[2rem] bg-primary/20 border border-primary/30 mx-auto flex items-center justify-center text-primary text-4xl font-black shadow-lg shadow-primary/20">
-                {user?.name[0]?.toUpperCase()}
+                {initial}
               </div>
-              <h3 className="text-xl font-black text-foreground mt-6 tracking-tight">{user?.name}</h3>
+              <h3 className="text-xl font-black text-foreground mt-6 tracking-tight">{displayName}</h3>
               <p className="text-xs text-muted-foreground font-medium mt-1">{user?.email}</p>
               <div className={cn("mt-4 inline-block px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border", getRoleColor(user?.role || "Member"))}>
                 {user?.role} STATUS
