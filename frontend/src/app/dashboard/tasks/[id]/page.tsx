@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
-import { cn, getPriorityColor, getStatusColor, formatDate, formatRelativeTime, getDisplayName, getInitial } from "@/lib/utils";
+import { cn, getPriorityColor, getStatusColor, formatDate, formatRelativeTime, getDisplayName, getInitial, isMemberRole } from "@/lib/utils";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { supabase } from "@/lib/supabase";
@@ -18,7 +18,7 @@ export default function TaskDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { user: me } = useAuthStore();
-  const { fetchTask, currentTask: task, updateTaskStatus, isLoading } = useTaskStore();
+  const { fetchTask, currentTask: task, updateTaskStatus, addTaskComment, toggleSubtask, isLoading } = useTaskStore();
   
   const [comment, setComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -29,6 +29,7 @@ export default function TaskDetailPage() {
   const [completionSubmitting, setCompletionSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<"details" | "subtasks" | "activity">("details");
   const completionFileInputRef = useRef<HTMLInputElement>(null);
+  const isMember = isMemberRole(me?.role);
 
   useEffect(() => {
     if (params.id) fetchTask(params.id as string);
@@ -88,16 +89,15 @@ export default function TaskDetailPage() {
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!comment.trim()) return;
+    if (!task?._id || !comment.trim()) return;
     setIsSubmitting(true);
     try {
-      await api.post(`/tasks/${task?._id}/comments`, { text: comment });
+      await addTaskComment(task._id, { text: comment.trim() });
       await notifyLeadershipAboutComment(comment);
       setComment("");
-      fetchTask(task?._id as string);
       toast.success("Comment added");
-    } catch (err) {
-      toast.error("Failed to add comment");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to add comment");
     } finally {
       setIsSubmitting(false);
     }
@@ -105,10 +105,10 @@ export default function TaskDetailPage() {
 
   const handleToggleSubtask = async (subtaskId: string) => {
     try {
-      await api.patch(`/tasks/${task?._id}/subtasks/${subtaskId}`);
-      fetchTask(task?._id as string);
-    } catch (err) {
-      toast.error("Failed to update subtask");
+      if (!task?._id) return;
+      await toggleSubtask(task._id, subtaskId);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update subtask");
     }
   };
 
@@ -177,15 +177,17 @@ export default function TaskDetailPage() {
         .filter(Boolean)
         .join("\n\n");
 
-      await api.post(`/tasks/${task._id}/comments`, { text: completionMessage });
+      await addTaskComment(task._id, {
+        text: completionMessage,
+        attachments: completionAttachments,
+      });
       await notifyLeadershipAboutComment(`Completion proof submitted. ${completionNote.trim()}`.trim());
 
       setCompletionNote("");
       setCompletionAttachments([]);
-      await fetchTask(task._id);
       toast.success("Completion proof sent to CEO/CTO.");
-    } catch {
-      toast.error("Failed to submit completion proof.");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to submit completion proof.");
     } finally {
       setCompletionSubmitting(false);
     }
@@ -217,6 +219,14 @@ export default function TaskDetailPage() {
       </div>
     );
   }
+
+  const isTeamTask = Boolean(task.teamId && !task.assignedToId);
+  const myTeamProgressStatus =
+    isTeamTask && me?._id
+      ? task.teamProgress?.find((entry) => entry.userId === me._id)?.status || "pending"
+      : task.status;
+  const teamProgressEntries = task.teamProgress || [];
+  const teamCompletedCount = teamProgressEntries.filter((entry) => entry.status === "completed").length;
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-20">
@@ -262,6 +272,113 @@ export default function TaskDetailPage() {
               </div>
             </div>
           </motion.div>
+
+          {isMember && (
+            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-6 border border-primary/10">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="space-y-2">
+                  <p className="text-xs font-black uppercase tracking-widest text-primary">Member Progress Update</p>
+                  <h3 className="text-lg font-black text-foreground">Inform CEO / CTO about your task progress</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Tap the current stage below so leadership gets the realtime update instantly.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-border bg-secondary/30 px-4 py-4">
+                  <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Current Task Step</p>
+                  <p className="mt-1 text-xl font-black text-foreground">{statusToStepLabel(myTeamProgressStatus)}</p>
+                  <div className="mt-4 border-t border-border/60 pt-3">
+                    {isTeamTask ? (
+                      <>
+                        <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                          <span>Team Completion</span>
+                          <span className="text-foreground">{teamCompletedCount}/{teamProgressEntries.length || 0}</span>
+                        </div>
+                        <div className="mt-2 h-2 w-full overflow-hidden rounded-full border border-border/70 bg-background/40 p-0.5">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-primary to-emerald-400"
+                            style={{
+                              width: `${teamProgressEntries.length > 0 ? (teamCompletedCount / teamProgressEntries.length) * 100 : 0}%`,
+                            }}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Personal task progress is synced instantly to leadership.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+                {([
+                  { id: "pending", label: "Started", hint: "Let leadership know you have begun the work." },
+                  { id: "in-progress", label: "In Progress", hint: "Show that the task is actively moving forward." },
+                  { id: "completed", label: "Completed", hint: "Mark it done and unlock completion proof below." },
+                ] as const).map((step) => (
+                  <button
+                    key={step.id}
+                    type="button"
+                    onClick={() => handleStepUpdate(step.id)}
+                    disabled={isUpdatingStep}
+                    className={cn(
+                      "group flex min-h-[140px] flex-col rounded-2xl border px-4 py-4 text-left transition-all",
+                      myTeamProgressStatus === step.id
+                        ? "border-primary bg-primary/20 shadow-lg shadow-primary/20"
+                        : "border-border bg-secondary/30 hover:border-primary/40 hover:bg-secondary/50"
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className={cn("text-sm font-black", myTeamProgressStatus === step.id ? "text-primary" : "text-foreground")}>
+                        {step.label}
+                      </span>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-widest",
+                          myTeamProgressStatus === step.id
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-background/60 text-muted-foreground"
+                        )}
+                      >
+                        {myTeamProgressStatus === step.id ? "Active" : "Set"}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{step.hint}</p>
+                    <p className={cn(
+                      "mt-auto pt-3 text-[11px] font-medium",
+                      myTeamProgressStatus === step.id ? "text-primary" : "text-muted-foreground/90"
+                    )}>
+                      {myTeamProgressStatus === step.id
+                        ? "Currently broadcasting this stage"
+                        : "Tap to update leadership"}
+                    </p>
+                  </button>
+                ))}
+              </div>
+
+              {isTeamTask && teamProgressEntries.length > 0 && (
+                <div className="mt-5 rounded-2xl border border-border/60 bg-secondary/20 px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Team Progress Board</p>
+                    <span className="rounded-full border border-border/70 bg-background/40 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                      {teamCompletedCount}/{teamProgressEntries.length} Completed
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    {teamProgressEntries.map((entry) => (
+                      <div key={entry.userId} className="flex items-center justify-between rounded-xl border border-border/50 bg-background/40 px-3 py-2.5">
+                        <span className="text-xs font-medium text-foreground truncate">{entry.userName}</span>
+                        <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                          {statusToStepLabel(entry.status)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
 
           {/* Interactive Tabs Section */}
           <div className="space-y-4">
@@ -320,7 +437,7 @@ export default function TaskDetailPage() {
 
               {activeTab === "details" && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
-                  {me?.role === "Member" && task.status === "completed" && (
+                  {isMember && myTeamProgressStatus === "completed" && (
                     <div className="glass rounded-2xl p-6">
                       <h3 className="text-lg font-black mb-2">Completion Proof</h3>
                       <p className="text-xs text-muted-foreground mb-5">
@@ -386,22 +503,51 @@ export default function TaskDetailPage() {
                   <div className="glass rounded-2xl p-6">
                     <h3 className="text-lg font-black mb-6">Internal Intelligence (Comments)</h3>
                     <div className="space-y-6 mb-8">
-                      {task.comments?.map((c) => (
-                        <div key={c._id} className="flex gap-4">
-                          <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold border border-primary/20 shrink-0">
-                            {getInitial(c.user?.name, c.user?.email)}
-                          </div>
-                          <div className="flex-1 space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-black uppercase text-foreground">{getDisplayName(c.user?.name, c.user?.email)}</span>
-                              <span className="text-[10px] text-muted-foreground">{formatRelativeTime(c.createdAt)}</span>
+                      {task.comments?.length ? (
+                        task.comments.map((c) => (
+                          <div key={c._id} className="rounded-2xl border border-border/50 bg-background/20 p-3">
+                            <div className="flex items-start gap-3">
+                              <div className="mt-1 w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold border border-primary/20 shrink-0">
+                              {getInitial(c.user?.name, c.user?.email)}
+                              </div>
+                              <div className="min-w-0 flex-1 space-y-2">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-xs font-black uppercase tracking-widest text-foreground">{getDisplayName(c.user?.name, c.user?.email)}</span>
+                                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">{formatRelativeTime(c.createdAt)}</span>
+                                </div>
+                                <div className="bg-secondary/40 rounded-2xl p-4 border border-border/50 space-y-3">
+                                  <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">{c.text}</p>
+                                  {c.attachments?.length > 0 && (
+                                    <div className="grid gap-2">
+                                      {c.attachments.map((file, fileIndex) => (
+                                        <a
+                                          key={`${c._id}-${fileIndex}`}
+                                          href={file.fileUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/50 px-3 py-2 hover:border-primary/40 transition-colors"
+                                        >
+                                          <div className="flex min-w-0 items-center gap-2">
+                                            <Paperclip className="w-3.5 h-3.5 text-primary shrink-0" />
+                                            <span className="truncate text-xs font-medium text-foreground">{file.fileName || `Attachment ${fileIndex + 1}`}</span>
+                                          </div>
+                                          <span className="text-[10px] uppercase text-muted-foreground">
+                                            {(file.fileType || "file").split("/")[1] || file.fileType || "file"}
+                                          </span>
+                                        </a>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <div className="bg-secondary/40 rounded-2xl rounded-tl-none p-4 border border-border/50">
-                              <p className="text-sm text-foreground/90 leading-relaxed">{c.text}</p>
-                            </div>
                           </div>
+                        ))
+                      ) : (
+                        <div className="rounded-2xl border border-border/50 bg-secondary/20 px-4 py-6 text-sm text-muted-foreground">
+                          No comments yet. The first update here will show instantly for the team.
                         </div>
-                      ))}
+                      )}
                     </div>
                     <form onSubmit={handleAddComment} className="relative">
                       <textarea
@@ -486,33 +632,17 @@ export default function TaskDetailPage() {
               </div>
             </div>
 
-            {me?.role === "Member" && (
-              <div className="space-y-3 pt-4 border-t border-border/50">
-                <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Progress Step</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {([
-                    { id: "pending", label: "Started" },
-                    { id: "in-progress", label: "In Progress" },
-                    { id: "completed", label: "Completed" },
-                  ] as const).map((step) => (
-                    <button
-                      key={step.id}
-                      type="button"
-                      onClick={() => handleStepUpdate(step.id)}
-                      disabled={isUpdatingStep}
-                      className={cn(
-                        "px-2 py-2 rounded-lg border text-[11px] font-bold transition-all",
-                        task.status === step.id
-                          ? "border-primary bg-primary/15 text-primary"
-                          : "border-border bg-secondary/40 text-muted-foreground hover:text-foreground hover:border-primary/40"
-                      )}
-                    >
-                      {step.label}
-                    </button>
-                  ))}
-                </div>
+            {isMember && (
+              <div className="space-y-2 pt-4 border-t border-border/50">
+                <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Progress Sync</p>
+                <p className="text-sm text-foreground font-bold">{statusToStepLabel(myTeamProgressStatus)}</p>
+                {isTeamTask && (
+                  <p className="text-xs text-muted-foreground">
+                    Team completion: <span className="text-foreground font-medium">{teamCompletedCount}/{teamProgressEntries.length || 0}</span>
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">
-                  Current step: <span className="text-foreground font-medium">{statusToStepLabel(task.status)}</span>
+                  Members can update progress from the main task panel.
                 </p>
               </div>
             )}

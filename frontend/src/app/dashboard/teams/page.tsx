@@ -117,18 +117,18 @@ export default function TeamsPage() {
           <h1 className="text-3xl font-black text-foreground tracking-tight">Organization Command</h1>
           <p className="text-muted-foreground font-medium uppercase tracking-widest text-[10px] mt-1">Operational Structure & Hierarchy</p>
         </div>
-        <div className="flex w-full md:w-auto flex-wrap items-center justify-end gap-3 md:gap-4">
-          <div className="relative group w-full md:w-64">
+        <div className="flex w-full md:w-auto flex-wrap items-stretch justify-end gap-3 md:gap-4">
+          <div className="relative group w-full md:w-72 h-12">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search Squads..."
-              className="bg-secondary/40 border border-border/50 rounded-2xl pl-12 pr-4 py-3 text-xs font-black focus:outline-none focus:ring-2 focus:ring-primary/50 w-full transition-all"
+              className="bg-secondary/40 border border-border/50 rounded-2xl pl-12 pr-4 h-full text-xs font-black focus:outline-none focus:ring-2 focus:ring-primary/50 w-full transition-all"
             />
           </div>
-          <button onClick={handleAssembleTeam} className="flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3.5 rounded-2xl font-black text-xs hover:scale-105 transition-transform shadow-xl shadow-primary/20 tracking-widest whitespace-nowrap">
+          <button onClick={handleAssembleTeam} className="flex h-12 items-center gap-2 bg-primary text-primary-foreground px-6 rounded-2xl font-black text-xs hover:scale-105 transition-transform shadow-xl shadow-primary/20 tracking-widest whitespace-nowrap">
              ASSEMBLE TEAM
           </button>
         </div>
@@ -184,7 +184,7 @@ export default function TeamsPage() {
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.1 }}
-              className="glass rounded-[2rem] p-8 space-y-8 border-primary/5 hover:border-primary/20 transition-all group relative overflow-hidden shadow-2xl"
+              className="glass rounded-[2rem] p-8 border-primary/5 hover:border-primary/20 transition-all group relative overflow-hidden shadow-2xl h-full flex flex-col"
             >
               {/* Squad Header */}
               <div className="flex items-start justify-between">
@@ -203,24 +203,24 @@ export default function TeamsPage() {
               </div>
 
               {/* Squad Analytics */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="mt-7 grid grid-cols-2 gap-4">
                 <StatCard label="Tasks" value={team.stats?.totalTasks || 0} icon={Target} color="text-blue-400 bg-blue-400" />
                 <StatCard label="Victory" value={`${Math.round((team.stats?.completedTasks / (team.stats?.totalTasks || 1)) * 100)}%`} icon={ShieldCheck} color="text-emerald-400 bg-emerald-400" />
               </div>
 
               {/* Squad Commander */}
-              <div className="space-y-4">
+              <div className="mt-7 space-y-4">
                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-2">Squad Leader</p>
                 <UserBadge user={team.lead} size="sm" />
               </div>
 
               {/* Squad Members */}
-              <div className="space-y-4 pt-4 border-t border-border/50">
+              <div className="mt-auto space-y-4 pt-6 border-t border-border/50">
                 <div className="flex items-center justify-between px-2">
                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Operatives</p>
                   <span className="text-[10px] font-black text-primary">{team.members.length} VERIFIED</span>
                 </div>
-                <div className="flex -space-x-3">
+                <div className="flex items-center -space-x-3">
                   {team.members.slice(0, 5).map((m) => (
                     <motion.div
                       key={m._id}

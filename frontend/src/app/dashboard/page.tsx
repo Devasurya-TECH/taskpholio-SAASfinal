@@ -12,6 +12,15 @@ import ActivityTable from "@/components/dashboard/ActivityTable";
 import ActionPanel from "@/components/dashboard/ActionPanel";
 import "./dashboard.css";
 
+const COMPLETED_VISIBILITY_DAYS = 7;
+const COMPLETED_VISIBILITY_MS = COMPLETED_VISIBILITY_DAYS * 24 * 60 * 60 * 1000;
+
+const parseTaskDate = (value?: string): Date | null => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 export default function DashboardPage() {
   const { tasks, fetchTasks } = useTaskStore();
   const { user } = useAuthStore();
@@ -21,15 +30,25 @@ export default function DashboardPage() {
     fetchTasks(true);
   }, [fetchTasks]);
 
+  const dashboardTasks = useMemo(() => {
+    const now = Date.now();
+    return tasks.filter((task) => {
+      if (task.status !== "completed") return true;
+      const completedAt = parseTaskDate(task.completedAt || task.updatedAt || task.createdAt);
+      if (!completedAt) return false;
+      return now - completedAt.getTime() <= COMPLETED_VISIBILITY_MS;
+    });
+  }, [tasks]);
+
   const metrics = useMemo(() => {
-    const total = tasks.length;
-    const completed = tasks.filter((task) => task.status === "completed").length;
-    const inProgress = tasks.filter((task) => task.status === "in-progress").length;
-    const pending = tasks.filter((task) => task.status === "pending").length;
-    const blocked = tasks.filter((task) => task.status === "blocked").length;
+    const total = dashboardTasks.length;
+    const completed = dashboardTasks.filter((task) => task.status === "completed").length;
+    const inProgress = dashboardTasks.filter((task) => task.status === "in-progress").length;
+    const pending = dashboardTasks.filter((task) => task.status === "pending").length;
+    const blocked = dashboardTasks.filter((task) => task.status === "blocked").length;
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
     return { total, completed, inProgress, pending, blocked, completionRate };
-  }, [tasks]);
+  }, [dashboardTasks]);
 
   const trendData = useMemo(() => {
     const points = Array.from({ length: 7 }, (_, index) => {
@@ -44,17 +63,17 @@ export default function DashboardPage() {
     });
 
     const pointMap = new Map(points.map((point) => [point.key, point]));
-    tasks.forEach((task) => {
+    dashboardTasks.forEach((task) => {
       const createdKey = new Date(task.createdAt).toISOString().slice(0, 10);
       if (pointMap.has(createdKey)) pointMap.get(createdKey)!.created += 1;
       if (task.status === "completed") {
-        const completedKey = new Date(task.updatedAt || task.createdAt).toISOString().slice(0, 10);
+        const completedKey = new Date(task.completedAt || task.updatedAt || task.createdAt).toISOString().slice(0, 10);
         if (pointMap.has(completedKey)) pointMap.get(completedKey)!.completed += 1;
       }
     });
 
     return points;
-  }, [tasks]);
+  }, [dashboardTasks]);
 
   const throughputData = useMemo(() => {
     let cumulative = 0;
@@ -141,7 +160,7 @@ export default function DashboardPage() {
         </section>
 
         <section className="content-grid-premium">
-          <ActivityTable tasks={tasks} />
+          <ActivityTable tasks={dashboardTasks} />
           <ActionPanel completed={metrics.completed} inProgress={metrics.inProgress} pending={metrics.pending + metrics.blocked} />
         </section>
       </div>

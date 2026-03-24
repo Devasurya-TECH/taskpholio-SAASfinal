@@ -10,14 +10,34 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, BarChart, Bar, CartesianGrid, Legend
 } from "recharts";
-import api from "@/lib/api";
-import { Task, Team } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 import { supabase } from "@/lib/supabase";
 
 const COLORS = ["#3b82f6", "#22c55e", "#a855f7", "#f59e0b", "#ef4444"];
+
+interface AnalyticsTaskRow {
+  id: string;
+  status: string;
+  priority: string;
+  assigned_team: string | null;
+}
+
+interface AnalyticsTeamRow {
+  id: string;
+  name: string;
+}
+
+interface AnalyticsTeamStats {
+  _id: string;
+  name: string;
+  memberCount: number;
+  stats: {
+    totalTasks: number;
+    completedTasks: number;
+  };
+}
 
 const StatCard = ({ label, value, sub, icon: Icon, color }: any) => (
   <motion.div whileHover={{ y: -5 }} className="glass rounded-[2rem] p-8 border border-white/5 shadow-2xl space-y-4">
@@ -33,38 +53,69 @@ const StatCard = ({ label, value, sub, icon: Icon, color }: any) => (
 );
 
 export default function AnalyticsPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [teams, setTeams] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<AnalyticsTaskRow[]>([]);
+  const [teams, setTeams] = useState<AnalyticsTeamStats[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
-        const { data: tasksData } = await supabase.from('tasks').select('*');
-        setTasks((tasksData as any) || []);
+        const { data: tasksData, error: tasksError } = await supabase
+          .from("tasks")
+          .select("id,status,priority,assigned_team");
+        if (tasksError) throw tasksError;
 
-        const teamIds = ['technical_engine', 'security_auth', 'social_marketing'];
-        const teamLabels: Record<string, string> = {
-          technical_engine: 'Technical Engine',
-          security_auth: 'Security & Auth',
-          social_marketing: 'Social Marketing',
-        };
+        const { data: teamsData, error: teamsError } = await supabase
+          .from("teams")
+          .select("id,name")
+          .order("created_at", { ascending: true });
+        if (teamsError) throw teamsError;
 
-        const teamsData = await Promise.all(
-          teamIds.map(async (teamId) => {
-            const { data: members } = await supabase.from('profiles').select('id').eq('team', teamId);
-            const { count: completedTasks } = await supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('assigned_team', teamId).eq('status', 'completed');
-            const { count: totalTasks } = await supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('assigned_team', teamId);
+        const normalizedTasks = (tasksData || []) as AnalyticsTaskRow[];
+        const dbTeams = (teamsData || []) as AnalyticsTeamRow[];
+        setTasks(normalizedTasks);
 
-            return {
-              _id: teamId,
-              name: teamLabels[teamId],
-              members: members || [],
-              stats: { totalTasks: totalTasks || 0, completedTasks: completedTasks || 0 }
-            };
-          })
-        );
-        setTeams(teamsData);
+        if (dbTeams.length === 0) {
+          setTeams([]);
+          return;
+        }
+
+        const teamIds = dbTeams.map((team) => team.id);
+        const { data: membersData, error: membersError } = await supabase
+          .from("profiles")
+          .select("id,team")
+          .in("team", teamIds);
+        if (membersError) throw membersError;
+
+        const memberCountMap = new Map<string, number>();
+        (membersData || []).forEach((member: any) => {
+          const teamId = member.team;
+          if (!teamId) return;
+          memberCountMap.set(teamId, (memberCountMap.get(teamId) || 0) + 1);
+        });
+
+        const taskCountMap = new Map<string, { totalTasks: number; completedTasks: number }>();
+        dbTeams.forEach((team) => {
+          taskCountMap.set(team.id, { totalTasks: 0, completedTasks: 0 });
+        });
+
+        normalizedTasks.forEach((task) => {
+          if (!task.assigned_team || !taskCountMap.has(task.assigned_team)) return;
+          const current = taskCountMap.get(task.assigned_team)!;
+          current.totalTasks += 1;
+          if ((task.status || "").toLowerCase() === "completed") {
+            current.completedTasks += 1;
+          }
+        });
+
+        const hydratedTeams: AnalyticsTeamStats[] = dbTeams.map((team) => ({
+          _id: team.id,
+          name: team.name,
+          memberCount: memberCountMap.get(team.id) || 0,
+          stats: taskCountMap.get(team.id) || { totalTasks: 0, completedTasks: 0 },
+        }));
+
+        setTeams(hydratedTeams);
       } catch (err) {
         toast.error("Failed to sync intelligence data");
       } finally {
@@ -75,17 +126,20 @@ export default function AnalyticsPage() {
   }, []);
 
   const taskStats = useMemo(() => {
+    const statusOf = (task: AnalyticsTaskRow) => (task.status || "").toLowerCase();
+    const priorityOf = (task: AnalyticsTaskRow) => (task.priority || "").toLowerCase();
+
     const statusData = [
-      { name: "Completed", value: tasks.filter(t => t.status === "completed").length },
-      { name: "In Progress", value: tasks.filter(t => t.status === "in-progress").length },
-      { name: "Pending", value: tasks.filter(t => t.status === "pending").length },
+      { name: "Completed", value: tasks.filter((task) => statusOf(task) === "completed").length },
+      { name: "In Progress", value: tasks.filter((task) => statusOf(task) === "in-progress" || statusOf(task) === "in_progress").length },
+      { name: "Started", value: tasks.filter((task) => statusOf(task) === "pending").length },
     ].filter(d => d.value > 0);
 
     const priorityData = [
-      { name: "Urgent", value: tasks.filter(t => t.priority === "urgent").length },
-      { name: "High", value: tasks.filter(t => t.priority === "high").length },
-      { name: "Medium", value: tasks.filter(t => t.priority === "medium").length },
-      { name: "Low", value: tasks.filter(t => t.priority === "low").length },
+      { name: "Urgent", value: tasks.filter((task) => priorityOf(task) === "urgent" || priorityOf(task) === "critical").length },
+      { name: "High", value: tasks.filter((task) => priorityOf(task) === "high").length },
+      { name: "Medium", value: tasks.filter((task) => priorityOf(task) === "medium").length },
+      { name: "Low", value: tasks.filter((task) => priorityOf(task) === "low").length },
     ].filter(d => d.value > 0);
 
     return { statusData, priorityData };
@@ -128,9 +182,9 @@ export default function AnalyticsPage() {
 
       {/* High Level Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
-        <StatCard label="Operational Completion" value={`${Math.round((tasks.filter(t => t.status === "completed").length / (tasks.length || 1)) * 100)}%`} sub="Overall Mission Success Rate" icon={TrendingUp} color="bg-emerald-500/10 text-emerald-400" />
-        <StatCard label="Active Personnel" value={teams.reduce((acc, t) => acc + t.members.length, 0)} sub="Across All Tactical Squads" icon={Users} color="bg-blue-500/10 text-blue-400" />
-        <StatCard label="Pending Objectives" value={tasks.filter(t => t.status !== "completed").length} sub="Requiring Immediate Intelligence" icon={Target} color="bg-purple-500/10 text-purple-400" />
+        <StatCard label="Operational Completion" value={`${Math.round((tasks.filter((task) => (task.status || "").toLowerCase() === "completed").length / (tasks.length || 1)) * 100)}%`} sub="Overall Mission Success Rate" icon={TrendingUp} color="bg-emerald-500/10 text-emerald-400" />
+        <StatCard label="Active Personnel" value={teams.reduce((acc, team) => acc + (team.memberCount || 0), 0)} sub="Across All Tactical Squads" icon={Users} color="bg-blue-500/10 text-blue-400" />
+        <StatCard label="Pending Objectives" value={tasks.filter((task) => (task.status || "").toLowerCase() !== "completed").length} sub="Requiring Immediate Intelligence" icon={Target} color="bg-purple-500/10 text-purple-400" />
         <StatCard label="System Velocity" value="8.4" sub="Tasks Resolved Per Operative" icon={Zap} color="bg-yellow-500/10 text-yellow-400" />
       </div>
 
@@ -173,19 +227,27 @@ export default function AnalyticsPage() {
             <Activity className="w-5 h-5 text-emerald-400" />
           </div>
           <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={teamPerformance}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: "bold" }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: "bold" }} />
-                <Tooltip 
-                  cursor={{ fill: "rgba(255,255,255,0.05)" }}
-                  contentStyle={{ backgroundColor: "#1e1e2e", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.1)", color: "#fff" }}
-                />
-                <Bar dataKey="completed" fill="#3b82f6" radius={[6, 6, 0, 0]} name="Completed" />
-                <Bar dataKey="total" fill="rgba(59, 130, 246, 0.2)" radius={[6, 6, 0, 0]} name="Total Capacity" />
-              </BarChart>
-            </ResponsiveContainer>
+            {teamPerformance.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={teamPerformance}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: "bold" }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: "bold" }} />
+                  <Tooltip
+                    cursor={{ fill: "rgba(255,255,255,0.05)" }}
+                    contentStyle={{ backgroundColor: "#1e1e2e", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.1)", color: "#fff" }}
+                  />
+                  <Bar dataKey="completed" fill="#3b82f6" radius={[6, 6, 0, 0]} name="Completed" />
+                  <Bar dataKey="total" fill="rgba(59, 130, 246, 0.2)" radius={[6, 6, 0, 0]} name="Total Capacity" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full rounded-2xl border border-border/50 bg-secondary/20 flex items-center justify-center px-6 text-center">
+                <p className="text-sm text-muted-foreground">
+                  No teams found yet. Create teams to see live squad performance analytics here.
+                </p>
+              </div>
+            )}
           </div>
         </motion.div>
       </div>

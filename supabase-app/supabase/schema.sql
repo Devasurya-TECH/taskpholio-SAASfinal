@@ -48,6 +48,14 @@ create table public.tasks (
   assigned_team text,
   created_by uuid references public.profiles(id) on delete set null,
   due_date date,
+  attachments jsonb not null default '[]'::jsonb,
+  subtasks jsonb not null default '[]'::jsonb,
+  comments jsonb not null default '[]'::jsonb,
+  activity jsonb not null default '[]'::jsonb,
+  team_progress jsonb not null default '[]'::jsonb,
+  tags jsonb not null default '[]'::jsonb,
+  progress integer not null default 0,
+  is_archived boolean not null default false,
   completed_at timestamptz,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -134,23 +142,36 @@ create policy "profiles_insert_admin" on public.profiles for insert with check (
 
 -- Tasks
 create policy "tasks_select" on public.tasks for select using (
-  assigned_to = auth.uid()
+  exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('ceo','cto'))
+  or assigned_to = auth.uid()
   or created_by = auth.uid()
   or (
     visibility = 'team'
     and (
-      exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('ceo','cto'))
-      or assigned_team = (select team from public.profiles where id = auth.uid())
+      assigned_team = (select team from public.profiles where id = auth.uid())
     )
   )
   or visibility = 'all'
 );
 create policy "tasks_insert" on public.tasks for insert with check (
   exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('ceo','cto'))
+  and created_by = auth.uid()
 );
 create policy "tasks_update" on public.tasks for update using (
   exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('ceo','cto'))
   or assigned_to = auth.uid()
+  or (
+    visibility = 'team'
+    and assigned_team = (select team from public.profiles where id = auth.uid())
+  )
+)
+with check (
+  exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('ceo','cto'))
+  or assigned_to = auth.uid()
+  or (
+    visibility = 'team'
+    and assigned_team = (select team from public.profiles where id = auth.uid())
+  )
 );
 create policy "tasks_delete" on public.tasks for delete using (
   exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('ceo','cto'))

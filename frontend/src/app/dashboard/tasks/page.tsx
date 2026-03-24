@@ -8,7 +8,7 @@ import { Plus, Search, Users } from "lucide-react";
 import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
 import { Task } from "@/lib/types";
-import { cn, getPriorityColor, formatDate, getDisplayName, getInitial } from "@/lib/utils";
+import { cn, getPriorityColor, formatDate, getDisplayName, getInitial, isMemberRole } from "@/lib/utils";
 import Link from "next/link";
 import { toast } from "sonner";
 import CreateTaskModal from "@/components/tasks/CreateTaskModal";
@@ -118,7 +118,7 @@ export default function TasksPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
-  const isMember = user?.role === "Member";
+  const isMember = isMemberRole(user?.role);
   const myTeamId = typeof user?.team === "string" ? user.team : user?.team?._id;
 
   useEffect(() => {
@@ -157,6 +157,19 @@ export default function TasksPage() {
 
   const byStatus = (status: Task["status"]) => filtered.filter((task) => task.status === status);
   const activeTask = tasks.find((task) => task._id === activeId);
+
+  const getMyTeamProgressStatus = (task: Task): Task["status"] => {
+    if (!user?._id) return task.status;
+    const mine = task.teamProgress?.find((entry) => entry.userId === user._id);
+    return mine?.status || "pending";
+  };
+
+  const getTeamProgressSummary = (task: Task): string => {
+    const entries = task.teamProgress || [];
+    if (entries.length === 0) return "0/0 completed";
+    const completed = entries.filter((entry) => entry.status === "completed").length;
+    return `${completed}/${entries.length} completed`;
+  };
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -265,6 +278,11 @@ export default function TasksPage() {
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">{memberStepLabel(task.status)}</p>
                     {task.dueDate && <p className="text-xs text-muted-foreground mt-1">Deadline: {formatDate(task.dueDate)}</p>}
+                    <div className="mt-3">
+                      <Link href={`/dashboard/tasks/${task._id}`} className="text-xs font-semibold text-primary hover:underline">
+                        Open Task
+                      </Link>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -295,6 +313,9 @@ export default function TasksPage() {
                         <td className="py-2 pr-3">
                           <p className="font-medium text-foreground">{task.title}</p>
                           {task.team?.name && <p className="text-xs text-muted-foreground">{task.team.name}</p>}
+                          <Link href={`/dashboard/tasks/${task._id}`} className="text-[11px] font-semibold text-primary hover:underline">
+                            Open Task
+                          </Link>
                         </td>
                         <td className="py-2 pr-3 text-xs text-muted-foreground">{task.dueDate ? formatDate(task.dueDate) : "No deadline"}</td>
                         <td className="py-2 pr-3 text-xs">
@@ -302,7 +323,7 @@ export default function TasksPage() {
                         </td>
                         <td className="py-2">
                           <select
-                            value={task.status}
+                            value={getMyTeamProgressStatus(task)}
                             onChange={(event) => handleTeamTaskStatusChange(task._id, event.target.value as Task["status"])}
                             className="bg-secondary border border-border rounded-lg px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                           >
@@ -310,6 +331,7 @@ export default function TasksPage() {
                               <option key={status} value={status}>{memberStepLabel(status)}</option>
                             ))}
                           </select>
+                          <p className="mt-1 text-[10px] text-muted-foreground">{getTeamProgressSummary(task)}</p>
                         </td>
                       </tr>
                     ))}
@@ -331,6 +353,11 @@ export default function TasksPage() {
                     <p className="text-xs text-muted-foreground mt-1">Assigned to: {task.assignedTo?.name || "Member"}</p>
                     <p className="text-xs text-muted-foreground mt-1">Status: {memberStepLabel(task.status)}</p>
                     {task.dueDate && <p className="text-xs text-muted-foreground mt-1">Deadline: {formatDate(task.dueDate)}</p>}
+                    <div className="mt-3">
+                      <Link href={`/dashboard/tasks/${task._id}`} className="text-xs font-semibold text-primary hover:underline">
+                        Open Task
+                      </Link>
+                    </div>
                   </div>
                 ))}
               </div>

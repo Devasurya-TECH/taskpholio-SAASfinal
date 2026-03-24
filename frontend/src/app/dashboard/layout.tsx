@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useTaskStore } from "@/store/taskStore";
 import { useNotificationStore } from "@/store/notificationStore";
+import { useUIStore } from "@/store/uiStore";
 import { registerPushSubscription } from "@/lib/pushSubscription";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
@@ -18,17 +19,23 @@ const pageTitles: Record<string, string> = {
   "/dashboard/meetings": "Meetings",
   "/dashboard/notifications": "Notifications",
   "/dashboard/analytics": "Advanced Analytics",
+  "/dashboard/pending": "Pending Tasks",
   "/dashboard/profile": "Profile Settings",
   "/dashboard/settings": "Settings",
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, fetchMe, token } = useAuthStore();
+  const { initTheme } = useUIStore();
   const router = useRouter();
   const pathname = usePathname();
   const { fetchTasks } = useTaskStore();
 
   const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    initTheme();
+  }, [initTheme]);
 
   useEffect(() => {
     setIsMounted(true);

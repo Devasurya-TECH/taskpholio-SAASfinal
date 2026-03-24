@@ -39,6 +39,13 @@ export interface Activity {
   timestamp: string;
 }
 
+export interface TeamProgressEntry {
+  userId: string;
+  userName: string;
+  status: "pending" | "in-progress" | "completed";
+  updatedAt: string;
+}
+
 export interface Task {
   _id: string;
   title: string;
@@ -57,9 +64,11 @@ export interface Task {
   subtasks: Subtask[];
   comments: Comment[];
   activity: Activity[];
+  teamProgress?: TeamProgressEntry[];
   tags: string[];
   isArchived: boolean;
   progress: number;
+  completedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

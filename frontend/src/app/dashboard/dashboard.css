@@ -280,8 +280,49 @@
   background: rgba(16, 185, 129, 0.09);
 }
 
+.activity-table tbody tr.activity-row-overdue {
+  background: rgba(248, 113, 113, 0.09);
+}
+
+.activity-table tbody tr.activity-row-overdue:hover {
+  background: rgba(248, 113, 113, 0.14);
+}
+
+.activity-table tbody tr.activity-row-today {
+  background: rgba(250, 204, 21, 0.08);
+}
+
+.activity-table tbody tr.activity-row-today:hover {
+  background: rgba(250, 204, 21, 0.14);
+}
+
 .activity-table .muted {
   color: rgba(203, 213, 225, 0.72);
+}
+
+.deadline-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.45rem;
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: 1px solid transparent;
+  vertical-align: middle;
+}
+
+.deadline-chip.overdue {
+  background: rgba(248, 113, 113, 0.16);
+  border-color: rgba(248, 113, 113, 0.4);
+  color: #fecaca;
+}
+
+.deadline-chip.today {
+  background: rgba(250, 204, 21, 0.16);
+  border-color: rgba(250, 204, 21, 0.36);
+  color: #fef08a;
 }
 
 .status-chip {
@@ -418,6 +459,36 @@
   display: block;
   font-size: 0.95rem;
   color: #f8fafc;
+}
+
+:root[data-theme="light"] .premium-dashboard-shell {
+  color: #0f172a;
+}
+
+:root[data-theme="light"] .premium-glass {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.88), rgba(248, 250, 252, 0.84));
+  border-color: rgba(15, 23, 42, 0.12);
+  box-shadow: 0 16px 28px rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="light"] .hero-title,
+:root[data-theme="light"] .kpi-value,
+:root[data-theme="light"] .panel-head h3,
+:root[data-theme="light"] .action-stats strong {
+  color: #0f172a;
+}
+
+:root[data-theme="light"] .hero-subtitle,
+:root[data-theme="light"] .panel-head p,
+:root[data-theme="light"] .kpi-description,
+:root[data-theme="light"] .activity-table .muted,
+:root[data-theme="light"] .empty-label {
+  color: rgba(51, 65, 85, 0.82);
+}
+
+:root[data-theme="light"] .activity-table th,
+:root[data-theme="light"] .kpi-label {
+  color: rgba(71, 85, 105, 0.88);
 }
 
 @media (max-width: 920px) {

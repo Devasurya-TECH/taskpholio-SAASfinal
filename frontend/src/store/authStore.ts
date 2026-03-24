@@ -5,7 +5,7 @@ import { User } from "@/lib/types";
 import api from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { getDisplayName } from "@/lib/utils";
+import { getDisplayName, normalizeUserRole } from "@/lib/utils";
 
 interface AuthState {
   user: User | null;
@@ -59,17 +59,11 @@ export const useAuthStore = create<AuthState>()(
 
           console.log("[AUTH] Profile fetched successfully:", profile.role);
 
-          const roleMap: Record<string, any> = {
-            'ceo': 'CEO',
-            'cto': 'CTO',
-            'member': 'Member'
-          };
-
           const user: User = {
             _id: profile.id,
             name: getDisplayName(profile.full_name, profile.email),
             email: profile.email,
-            role: roleMap[profile.role.toLowerCase()] || "Member",
+            role: normalizeUserRole(profile.role),
             status: "active",
             lastActive: new Date().toISOString(),
             team: profile.team,
@@ -113,17 +107,11 @@ export const useAuthStore = create<AuthState>()(
           // If auto-login is enabled by Supabase
           const { session, user: authUser } = data;
           
-          const roleMap: Record<string, any> = {
-            'ceo': 'CEO',
-            'cto': 'CTO',
-            'member': 'Member'
-          };
-
           const userObj: User = {
             _id: authUser.id,
             name: getDisplayName(name, email),
             email: email,
-            role: roleMap[role.toLowerCase()] || "Member",
+            role: normalizeUserRole(role),
             status: "active",
             lastActive: new Date().toISOString(),
             team: team,
@@ -157,7 +145,7 @@ export const useAuthStore = create<AuthState>()(
             _id: profile.id,
             name: getDisplayName(profile.full_name, profile.email),
             email: profile.email,
-            role: profile.role.toUpperCase() as any,
+            role: normalizeUserRole(profile.role),
             status: "active",
             lastActive: new Date().toISOString(),
             team: profile.team,

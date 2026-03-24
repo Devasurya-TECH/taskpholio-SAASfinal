@@ -2,6 +2,16 @@ export function cn(...classes: (string | undefined | null | false)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
+export function normalizeUserRole(role?: string | null): "CEO" | "CTO" | "Member" {
+  const normalized = (role || "").trim().toLowerCase();
+  if (normalized === "ceo") return "CEO";
+  if (normalized === "cto") return "CTO";
+  return "Member";
+}
+
+export function isMemberRole(role?: string | null): boolean {
+  return normalizeUserRole(role) === "Member";
+}
 
 export function formatDate(date: string | Date): string {
   return new Intl.DateTimeFormat("en-US", {

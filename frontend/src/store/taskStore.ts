@@ -1,10 +1,11 @@
 "use client";
 import { create } from "zustand";
-import { Task, User } from "@/lib/types";
+import { Attachment, Comment, Subtask, Task, TeamProgressEntry, User } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/store/authStore";
 import { RealtimeChannel } from "@supabase/supabase-js";
 import { sendPushToUsers } from "@/lib/pushNotifications";
+import { normalizeUserRole } from "@/lib/utils";
 
 interface TaskState {
   tasks: Task[];
@@ -22,6 +23,8 @@ interface TaskState {
   updateTask: (id: string, data: Partial<Task>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   updateTaskStatus: (id: string, status: Task["status"]) => Promise<void>;
+  addTaskComment: (id: string, payload: { text: string; attachments?: Attachment[] }) => Promise<Task>;
+  toggleSubtask: (id: string, subtaskId: string) => Promise<Task>;
   setFilters: (filters: Partial<TaskState["filters"]>) => void;
   getFilteredTasks: () => Task[];
   initRealtimeTasks: () => void;
@@ -34,6 +37,9 @@ const roleMap: Record<string, User["role"]> = {
   cto: "CTO",
   member: "Member",
 };
+
+const OVERDUE_ALERT_TITLE = "Task overdue warning";
+const OVERDUE_ALERT_ACTIVITY_ACTION = "overdue_alert_sent";
 
 const normalizeStatusFromDb = (status: string): Task["status"] => {
   const value = (status || "").toLowerCase();
@@ -81,7 +87,7 @@ const statusLabel = (status: Task["status"]): string => {
   if (status === "completed") return "Completed";
   if (status === "blocked") return "Blocked";
   if (status === "cancelled") return "Cancelled";
-  return "Not Started";
+  return "Started";
 };
 
 const buildAssignee = (profile: any): User | null => {
@@ -99,6 +105,166 @@ const buildAssignee = (profile: any): User | null => {
   };
 };
 
+const buildStoreUser = (user: User | null): User | null => {
+  if (!user) return null;
+  return {
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    avatar: user.avatar,
+    team: user.team || null,
+    status: user.status || "active",
+    lastActive: user.lastActive || new Date().toISOString(),
+    createdAt: user.createdAt || new Date().toISOString(),
+  };
+};
+
+const parseDueDateLocal = (value?: string | null): Date | null => {
+  if (!value) return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+
+  const dateOnlyMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    const year = Number(dateOnlyMatch[1]);
+    const month = Number(dateOnlyMatch[2]) - 1;
+    const day = Number(dateOnlyMatch[3]);
+    return new Date(year, month, day, 0, 0, 0, 0);
+  }
+
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+};
+
+const isPastDeadline = (dueDate?: string | null): boolean => {
+  const parsed = parseDueDateLocal(dueDate);
+  if (!parsed) return false;
+  const deadlineEnd = new Date(
+    parsed.getFullYear(),
+    parsed.getMonth(),
+    parsed.getDate(),
+    23,
+    59,
+    59,
+    999
+  );
+  return Date.now() > deadlineEnd.getTime();
+};
+
+const isIncompleteStatus = (status: Task["status"]): boolean => status !== "completed" && status !== "cancelled";
+
+const needsOverdueWarning = (task: Task): boolean =>
+  Boolean(task.assignedToId) &&
+  !task.teamId &&
+  Boolean(task.dueDate) &&
+  isIncompleteStatus(task.status) &&
+  isPastDeadline(task.dueDate);
+
+const hasOverdueAlertMarker = (task: Task): boolean =>
+  Array.isArray(task.activity) &&
+  task.activity.some((entry: any) => entry?.action === OVERDUE_ALERT_ACTIVITY_ACTION);
+
+const notifyLeadersAboutOverdueTasks = async (tasks: Task[], actor: User | null): Promise<void> => {
+  const role = normalizeUserRole(actor?.role || "");
+  if (role !== "CEO" && role !== "CTO") return;
+
+  const overdueTasks = tasks.filter((task) => needsOverdueWarning(task) && !hasOverdueAlertMarker(task));
+  if (overdueTasks.length === 0) return;
+
+  const { data: leaders, error: leaderError } = await supabase
+    .from("profiles")
+    .select("id")
+    .in("role", ["ceo", "cto"]);
+
+  if (leaderError || !leaders?.length) return;
+
+  const leaderIds = Array.from(new Set((leaders || []).map((leader: any) => leader.id).filter(Boolean)));
+  if (leaderIds.length === 0) return;
+
+  for (const task of overdueTasks) {
+    const due = parseDueDateLocal(task.dueDate);
+    const dueLabel = due
+      ? due.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      : "the set deadline";
+    const assigneeName = task.assignedTo?.name || "Assigned member";
+    const body = `${assigneeName} has not completed "${task.title}" before ${dueLabel}.`;
+
+    const notificationRows = leaderIds.map((leaderId) => ({
+      user_id: leaderId,
+      type: "task_updated",
+      title: OVERDUE_ALERT_TITLE,
+      body,
+      ref_id: task._id,
+    }));
+
+    await supabase.from("notifications").insert(notificationRows);
+    await sendPushToUsers({
+      userIds: leaderIds,
+      title: OVERDUE_ALERT_TITLE,
+      body,
+      url: "/dashboard/pending",
+      tag: `task-overdue-${task._id}`,
+    });
+
+    const nextActivity = [
+      ...(task.activity || []),
+      {
+        user: buildStoreUser(actor),
+        action: OVERDUE_ALERT_ACTIVITY_ACTION,
+        details: `Overdue warning sent for ${assigneeName} (deadline ${dueLabel})`,
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    const { error: markerError } = await supabase
+      .from("tasks")
+      .update({ activity: nextActivity })
+      .eq("id", task._id);
+
+    if (!markerError) {
+      task.activity = nextActivity;
+    }
+  }
+};
+
+const generateClientId = (): string =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const createCommentEntry = (user: User | null, text: string, attachments: Attachment[] = []): Comment => ({
+  _id: generateClientId(),
+  user: buildStoreUser(user) as User,
+  text,
+  attachments,
+  createdAt: new Date().toISOString(),
+});
+
+const normalizeSubtasks = (subtasks: Array<Partial<Subtask>> = []): Subtask[] =>
+  subtasks
+    .filter((subtask) => subtask?.title)
+    .map((subtask) => ({
+      _id: subtask._id || generateClientId(),
+      title: subtask.title?.trim() || "Untitled subtask",
+      completed: Boolean(subtask.completed),
+      assignedTo: subtask.assignedTo,
+    }));
+
+const normalizeTeamProgress = (entries: any[] = []): TeamProgressEntry[] =>
+  entries
+    .filter((entry) => entry?.userId)
+    .map((entry) => {
+      const normalized = (entry.status || "").toLowerCase();
+      return {
+        userId: entry.userId,
+        userName: entry.userName || "Member",
+        status: normalized === "completed" ? "completed" : normalized === "in-progress" ? "in-progress" : "pending",
+        updatedAt: entry.updatedAt || new Date().toISOString(),
+      };
+    });
+
 const resolveTeamId = (team: User["team"]): string | null => {
   if (!team) return null;
   if (typeof team === "string") return team;
@@ -111,13 +277,19 @@ const resolveTeamId = (team: User["team"]): string | null => {
 const buildTaskVisibilityFilter = (user: User | null): string | null => {
   if (!user?._id) return null;
 
+  const role = normalizeUserRole(user.role);
+
+  if (role === "CEO" || role === "CTO") {
+    return null;
+  }
+
   const filters = [
     `assigned_to.eq.${user._id}`,
     `created_by.eq.${user._id}`,
     "visibility.eq.all",
   ];
 
-  if (user.role === "Member") {
+  if (role === "Member") {
     const teamId = resolveTeamId(user.team);
     if (teamId) {
       filters.push(`assigned_team.eq.${teamId}`);
@@ -127,6 +299,23 @@ const buildTaskVisibilityFilter = (user: User | null): string | null => {
   }
 
   return filters.join(",");
+};
+
+const resolveCurrentUser = async (): Promise<User | null> => {
+  const existing = useAuthStore.getState().user;
+  if (existing?._id) return existing;
+
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data?.user) return null;
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("id, full_name, email, role, team, avatar_url, is_active, created_at")
+    .eq("id", data.user.id)
+    .single();
+
+  if (profileError || !profile) return null;
+  return buildAssignee(profile);
 };
 
 const hydrateTasks = async (rows: any[]): Promise<Task[]> => {
@@ -181,9 +370,11 @@ const hydrateTasks = async (rows: any[]): Promise<Task[]> => {
       subtasks: Array.isArray(row.subtasks) ? row.subtasks : [],
       comments: Array.isArray(row.comments) ? row.comments : [],
       activity: Array.isArray(row.activity) ? row.activity : [],
+      teamProgress: normalizeTeamProgress(Array.isArray(row.team_progress) ? row.team_progress : []),
       tags: Array.isArray(row.tags) ? row.tags : [],
       isArchived: Boolean(row.is_archived),
       progress: typeof row.progress === "number" ? row.progress : progressFromStatus(status),
+      completedAt: row.completed_at || undefined,
       createdAt: row.created_at || new Date().toISOString(),
       updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
       visibility: row.visibility || "team",
@@ -231,8 +422,12 @@ const createAssignmentNotifications = async (task: Task) => {
   }
 };
 
-const createTaskStatusNotifications = async (task: Task, status: Task["status"]) => {
-  const actor = useAuthStore.getState().user;
+const createTaskStatusNotifications = async (
+  task: Task,
+  status: Task["status"],
+  meta?: { actorStatus?: Task["status"]; teamSummary?: { completed: number; total: number } }
+) => {
+  const actor = await resolveCurrentUser();
   const recipientIds = new Set<string>();
 
   if (task.teamId) {
@@ -254,11 +449,22 @@ const createTaskStatusNotifications = async (task: Task, status: Task["status"])
 
   if (recipientIds.size === 0) return;
 
+  const baseStatus = statusLabel(status);
+  const actorStatus = meta?.actorStatus ? statusLabel(meta.actorStatus) : baseStatus;
+  const summary =
+    meta?.teamSummary && meta.teamSummary.total > 0
+      ? ` (${meta.teamSummary.completed}/${meta.teamSummary.total} completed)`
+      : "";
+
+  const body = meta?.actorStatus
+    ? `${actor?.name || "A teammate"} updated "${task.title}" to ${actorStatus}${summary}`
+    : `${actor?.name || "A teammate"} marked "${task.title}" as ${baseStatus}`;
+
   const rows = Array.from(recipientIds).map((userId) => ({
     user_id: userId,
     type: "task_updated",
     title: "Task status updated",
-    body: `${actor?.name || "A teammate"} marked "${task.title}" as ${statusLabel(status)}`,
+    body,
     ref_id: task._id,
   }));
 
@@ -266,10 +472,19 @@ const createTaskStatusNotifications = async (task: Task, status: Task["status"])
   await sendPushToUsers({
     userIds: rows.map((row) => row.user_id),
     title: "Task status updated",
-    body: `${actor?.name || "A teammate"} marked "${task.title}" as ${statusLabel(status)}`,
+    body,
     url: `/dashboard/tasks/${task._id}`,
     tag: `task-status-${task._id}`,
   });
+};
+
+const upsertTaskInState = (set: any, task: Task) => {
+  set((state: TaskState) => ({
+    tasks: state.tasks.some((existing) => existing._id === task._id)
+      ? state.tasks.map((existing) => (existing._id === task._id ? task : existing))
+      : [task, ...state.tasks],
+    currentTask: state.currentTask?._id === task._id ? task : state.currentTask,
+  }));
 };
 
 export const useTaskStore = create<TaskState>()((set, get) => ({
@@ -289,7 +504,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
 
     if (!silent) set({ isLoading: true });
     try {
-      const me = useAuthStore.getState().user;
+      const me = await resolveCurrentUser();
       let query = supabase.from("tasks").select("*").order("created_at", { ascending: false });
 
       const visibilityFilter = buildTaskVisibilityFilter(me);
@@ -307,6 +522,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       if (error) throw error;
 
       const mappedTasks = await hydrateTasks(data || []);
+      await notifyLeadersAboutOverdueTasks(mappedTasks, me);
       set({
         tasks: mappedTasks,
         isLoading: false,
@@ -321,7 +537,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   fetchTask: async (id) => {
     set({ isLoading: true, currentTask: null });
     try {
-      const me = useAuthStore.getState().user;
+      const me = await resolveCurrentUser();
       const visibilityFilter = buildTaskVisibilityFilter(me);
       let query = supabase.from("tasks").select("*").eq("id", id);
       if (visibilityFilter) {
@@ -339,9 +555,13 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   },
 
   createTask: async (data) => {
-    const me = useAuthStore.getState().user;
+    const me = await resolveCurrentUser();
     const assignedToId = data.assignedTo || data.assigned_to || null;
     const assignedTeamId = data.team || data.assigned_team || null;
+
+    if (!me?._id) {
+      throw new Error("We could not verify the current account. Please refresh and try again.");
+    }
 
     if (!assignedToId && !assignedTeamId) {
       throw new Error("Please assign this task to a member or a team.");
@@ -349,6 +569,22 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
 
     const memberVisibility = data.memberVisibility === "public" ? "all" : "personal";
     const visibility = assignedTeamId && !assignedToId ? "team" : memberVisibility;
+    let initialTeamProgress: TeamProgressEntry[] = [];
+
+    if (assignedTeamId && !assignedToId) {
+      const { data: teamMembers, error: teamMembersError } = await supabase
+        .from("profiles")
+        .select("id, full_name, email")
+        .eq("team", assignedTeamId);
+      if (teamMembersError) throw teamMembersError;
+
+      initialTeamProgress = (teamMembers || []).map((member: any) => ({
+        userId: member.id,
+        userName: member.full_name || member.email || "Member",
+        status: "pending",
+        updatedAt: new Date().toISOString(),
+      }));
+    }
 
     const payload = {
       title: data.title,
@@ -359,11 +595,31 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       assigned_to: assignedToId,
       assigned_team: assignedTeamId,
       visibility,
-      created_by: me?._id || null,
+      created_by: me._id,
+      attachments: Array.isArray(data.attachments) ? data.attachments : [],
+      subtasks: normalizeSubtasks(Array.isArray(data.subtasks) ? data.subtasks : []),
+      comments: [],
+      activity: [
+        {
+          user: buildStoreUser(me),
+          action: "created",
+          details: "Task created",
+          timestamp: new Date().toISOString(),
+        },
+      ],
+      team_progress: initialTeamProgress,
+      tags: Array.isArray(data.tags) ? data.tags : [],
+      progress: 0,
+      is_archived: false,
     };
 
     const { data: inserted, error } = await supabase.from("tasks").insert(payload).select("*").single();
-    if (error) throw error;
+    if (error) {
+      if (error.message?.toLowerCase().includes("row-level security")) {
+        throw new Error("Task creation is blocked by the database policy. Please apply the latest task workflow SQL patch and try again.");
+      }
+      throw error;
+    }
 
     const [task] = await hydrateTasks([inserted]);
     if (!task) throw new Error("Task created but could not be mapped.");
@@ -398,13 +654,124 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   },
 
   updateTaskStatus: async (id, status) => {
-    const previousTask = get().tasks.find((task) => task._id === id);
+    const actor = await resolveCurrentUser();
+    const previousTask =
+      get().currentTask?._id === id
+        ? get().currentTask
+        : get().tasks.find((task) => task._id === id) || null;
+
+    if (!previousTask) {
+      await get().fetchTask(id);
+    }
+
+    const task =
+      (get().currentTask?._id === id ? get().currentTask : get().tasks.find((item) => item._id === id)) || null;
+
+    if (!task) {
+      throw new Error("Task not found for status update.");
+    }
+
+    const isTeamTask = Boolean(task.teamId && !task.assignedToId);
+    const actorRole = normalizeUserRole(actor?.role || "");
+    const actorTeamId = resolveTeamId(actor?.team || null);
+
+    // Team tasks keep per-member progress and auto-complete only when all members are done.
+    if (isTeamTask && actorRole === "Member") {
+      if (!actor?._id) {
+        throw new Error("Unable to identify member for this progress update.");
+      }
+      if (!task.teamId || actorTeamId !== task.teamId) {
+        throw new Error("You can only update tasks assigned to your own team.");
+      }
+
+      const { data: memberProfiles, error: memberError } = await supabase
+        .from("profiles")
+        .select("id, full_name, email")
+        .eq("team", task.teamId);
+      if (memberError) throw memberError;
+
+      const progressMap = new Map<string, TeamProgressEntry>();
+      normalizeTeamProgress(task.teamProgress || []).forEach((entry) => {
+        progressMap.set(entry.userId, entry);
+      });
+
+      (memberProfiles || []).forEach((member: any) => {
+        const existing = progressMap.get(member.id);
+        progressMap.set(member.id, {
+          userId: member.id,
+          userName: member.full_name || member.email || "Member",
+          status: existing?.status || "pending",
+          updatedAt: existing?.updatedAt || new Date().toISOString(),
+        });
+      });
+
+      const actorEntry = progressMap.get(actor._id) || {
+        userId: actor._id,
+        userName: actor.name || actor.email || "Member",
+        status: "pending" as const,
+        updatedAt: new Date().toISOString(),
+      };
+
+      progressMap.set(actor._id, {
+        ...actorEntry,
+        status,
+        updatedAt: new Date().toISOString(),
+      });
+
+      const nextTeamProgress = Array.from(progressMap.values());
+      const totalMembers = nextTeamProgress.length || 1;
+      const completedCount = nextTeamProgress.filter((entry) => entry.status === "completed").length;
+      const anyStarted = nextTeamProgress.some((entry) => entry.status === "pending" || entry.status === "in-progress" || entry.status === "completed");
+      const anyInProgress = nextTeamProgress.some((entry) => entry.status === "in-progress");
+
+      let globalStatus: Task["status"] = "pending";
+      if (completedCount === totalMembers) {
+        globalStatus = "completed";
+      } else if (anyInProgress || (anyStarted && completedCount > 0)) {
+        globalStatus = "in-progress";
+      }
+
+      const nextProgress = Math.round((completedCount / totalMembers) * 100);
+      const nextActivity = [
+        ...(task.activity || []),
+        {
+          user: buildStoreUser(actor),
+          action: "team_progress_updated",
+          details: `${actor?.name || "A teammate"} marked progress as ${statusLabel(status)} (${completedCount}/${totalMembers} completed)`,
+          timestamp: new Date().toISOString(),
+        },
+      ];
+
+      const { data: updated, error } = await supabase
+        .from("tasks")
+        .update({
+          status: toDbStatus(globalStatus),
+          progress: nextProgress,
+          team_progress: nextTeamProgress,
+          activity: nextActivity,
+        })
+        .eq("id", id)
+        .select("*")
+        .single();
+
+      if (error) throw error;
+
+      const [mappedTask] = await hydrateTasks([updated]);
+      if (!mappedTask) throw new Error("Failed to refresh task status.");
+
+      upsertTaskInState(set, mappedTask);
+      await createTaskStatusNotifications(mappedTask, globalStatus, {
+        actorStatus: status,
+        teamSummary: { completed: completedCount, total: totalMembers },
+      });
+      return;
+    }
 
     set((state) => ({
-      tasks: state.tasks.map((task) =>
-        task._id === id
-          ? { ...task, status, progress: progressFromStatus(status), updatedAt: new Date().toISOString() }
-          : task
+      tasks: state.tasks.map((entry) =>
+        entry._id === id
+          ? { ...entry, status, progress: progressFromStatus(status), updatedAt: new Date().toISOString() }
+          : entry
       ),
     }));
 
@@ -417,25 +784,127 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
         .single();
       if (error) throw error;
 
-      const [task] = await hydrateTasks([updated]);
-      if (task) {
+      const [mappedTask] = await hydrateTasks([updated]);
+      if (mappedTask) {
         set((state) => ({
-          tasks: state.tasks.map((existing) => (existing._id === id ? task : existing)),
-          currentTask: state.currentTask?._id === id ? task : state.currentTask,
+          tasks: state.tasks.map((existing) => (existing._id === id ? mappedTask : existing)),
+          currentTask: state.currentTask?._id === id ? mappedTask : state.currentTask,
         }));
 
-        if (previousTask?.status !== status) {
-          await createTaskStatusNotifications(task, status);
+        if ((previousTask?.status || "pending") !== status) {
+          await createTaskStatusNotifications(mappedTask, status);
         }
       }
     } catch (err) {
       if (previousTask) {
         set((state) => ({
-          tasks: state.tasks.map((task) => (task._id === id ? previousTask : task)),
+          tasks: state.tasks.map((entry) => (entry._id === id ? previousTask : entry)),
+          currentTask: state.currentTask?._id === id ? previousTask : state.currentTask,
         }));
       }
       throw err;
     }
+  },
+
+  addTaskComment: async (id, payload) => {
+    const me = await resolveCurrentUser();
+    const sourceTask =
+      get().currentTask?._id === id
+        ? get().currentTask
+        : get().tasks.find((task) => task._id === id) || null;
+
+    if (!sourceTask) {
+      await get().fetchTask(id);
+    }
+
+    const task =
+      (get().currentTask?._id === id ? get().currentTask : get().tasks.find((item) => item._id === id)) || null;
+
+    if (!task || !me) {
+      throw new Error("Task not available for commenting.");
+    }
+
+    const newComment = createCommentEntry(me, payload.text, payload.attachments || []);
+    const nextComments = [...(task.comments || []), newComment];
+    const nextActivity = [
+      ...(task.activity || []),
+      {
+        user: buildStoreUser(me),
+        action: "commented",
+        details: payload.attachments?.length ? "Added a comment with attachments" : "Added a comment",
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    const { data: updated, error } = await supabase
+      .from("tasks")
+      .update({
+        comments: nextComments,
+        activity: nextActivity,
+      })
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+
+    const [mappedTask] = await hydrateTasks([updated]);
+    if (!mappedTask) throw new Error("Failed to refresh task comment state.");
+
+    upsertTaskInState(set, mappedTask);
+    return mappedTask;
+  },
+
+  toggleSubtask: async (id, subtaskId) => {
+    const sourceTask =
+      get().currentTask?._id === id
+        ? get().currentTask
+        : get().tasks.find((task) => task._id === id) || null;
+
+    if (!sourceTask) {
+      await get().fetchTask(id);
+    }
+
+    const me = await resolveCurrentUser();
+    const task =
+      (get().currentTask?._id === id ? get().currentTask : get().tasks.find((item) => item._id === id)) || null;
+
+    if (!task || !me) {
+      throw new Error("Task not available for subtask update.");
+    }
+
+    const nextSubtasks = (task.subtasks || []).map((subtask) =>
+      subtask._id === subtaskId ? { ...subtask, completed: !subtask.completed } : subtask
+    );
+    const completedCount = nextSubtasks.filter((subtask) => subtask.completed).length;
+    const nextProgress = nextSubtasks.length ? Math.round((completedCount / nextSubtasks.length) * 100) : task.progress;
+
+    const { data: updated, error } = await supabase
+      .from("tasks")
+      .update({
+        subtasks: nextSubtasks,
+        progress: nextProgress,
+        activity: [
+          ...(task.activity || []),
+          {
+            user: buildStoreUser(me),
+            action: "subtask_updated",
+            details: "Updated subtask progress",
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      })
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+
+    const [mappedTask] = await hydrateTasks([updated]);
+    if (!mappedTask) throw new Error("Failed to refresh task subtask state.");
+
+    upsertTaskInState(set, mappedTask);
+    return mappedTask;
   },
 
   deleteTask: async (id) => {
