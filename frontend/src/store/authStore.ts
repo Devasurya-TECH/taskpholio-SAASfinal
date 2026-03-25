@@ -14,7 +14,7 @@ interface AuthState {
   isAuthenticated: boolean;
   staySignedIn: boolean;
   login: (email: string, password: string, staySignedIn?: boolean) => Promise<void>;
-  register: (name: string, email: string, password: string, role: string, team?: string, staySignedIn?: boolean) => Promise<void>;
+  register: (name: string, email: string, password: string, role: string, team?: string, staySignedIn?: boolean) => Promise<boolean>;
   logout: () => void;
   fetchMe: () => Promise<void>;
   setAuth: (user: User, token: string) => void;
@@ -101,7 +101,7 @@ export const useAuthStore = create<AuthState>()(
           if (!data.session) {
             toast.info("Registration successful. Please check your email for confirmation.");
             set({ isLoading: false });
-            return;
+            return false;
           }
 
           // If auto-login is enabled by Supabase
@@ -122,6 +122,7 @@ export const useAuthStore = create<AuthState>()(
           storage.setItem("taskpholio_token", session.access_token);
           
           set({ user: userObj, token: session.access_token, isAuthenticated: true, isLoading: false });
+          return true;
         } catch (err: any) {
           set({ isLoading: false });
           throw err;

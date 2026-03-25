@@ -21,8 +21,8 @@ export default function RegisterPage() {
     e.preventDefault();
     if (isLoading) return;
     try {
-      await register(name, email, password, role, undefined, staySignedIn);
-      router.push("/dashboard");
+      const hasSession = await register(name, email, password, role, undefined, staySignedIn);
+      router.push(hasSession ? "/dashboard" : "/login");
     } catch (err: any) {
       toast.error(err.message || "Registration failed. Please try again.");
     }

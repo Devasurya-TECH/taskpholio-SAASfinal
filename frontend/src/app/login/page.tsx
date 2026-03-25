@@ -23,7 +23,7 @@ export default function LoginPage() {
       toast.success("Welcome back!");
       router.push("/dashboard");
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Login failed. Please try again.");
+      toast.error(err?.message || err?.response?.data?.message || "Login failed. Please try again.");
     }
   };
 
