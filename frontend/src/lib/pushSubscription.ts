@@ -2,6 +2,12 @@ import { supabase } from "@/lib/supabase";
 
 const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
 
+type SubscriptionKeys = {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+};
+
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -13,10 +19,32 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+function extractSubscriptionKeys(subscription: PushSubscription): SubscriptionKeys | null {
+  const json = subscription.toJSON();
+  const endpoint = json.endpoint;
+  const p256dh = json.keys?.p256dh;
+  const auth = json.keys?.auth;
+  if (!endpoint || !p256dh || !auth) return null;
+  return { endpoint, p256dh, auth };
+}
+
+function isRecoverableSubscriptionConflict(error: { message?: string } | null): boolean {
+  const message = (error?.message || "").toLowerCase();
+  return (
+    message.includes("row-level security") ||
+    message.includes("duplicate key") ||
+    message.includes("conflict") ||
+    message.includes("violates")
+  );
+}
+
 export async function registerPushSubscription(): Promise<void> {
   if (typeof window === "undefined") return;
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-  if (!vapidPublicKey) return;
+  if (!vapidPublicKey) {
+    console.error("Push subscription skipped: NEXT_PUBLIC_VAPID_PUBLIC_KEY is missing.");
+    return;
+  }
 
   const { data: sessionData } = await supabase.auth.getSession();
   const userId = sessionData?.session?.user?.id;
@@ -44,6 +72,27 @@ export async function registerPushSubscription(): Promise<void> {
   }
 
   let subscription = await registration.pushManager.getSubscription();
+  if (subscription) {
+    const current = extractSubscriptionKeys(subscription);
+    if (!current) {
+      await subscription.unsubscribe().catch(() => undefined);
+      subscription = null;
+    } else {
+      // If this endpoint belongs to another account on this device, force a fresh subscription.
+      const { data: ownExisting } = await supabase
+        .from("push_subscriptions")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("endpoint", current.endpoint)
+        .maybeSingle();
+
+      if (!ownExisting) {
+        await subscription.unsubscribe().catch(() => undefined);
+        subscription = null;
+      }
+    }
+  }
+
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
@@ -53,23 +102,36 @@ export async function registerPushSubscription(): Promise<void> {
 
   if (!subscription) return;
 
-  const json = subscription.toJSON();
-  const endpoint = json.endpoint;
-  const p256dh = json.keys?.p256dh;
-  const auth = json.keys?.auth;
-  if (!endpoint || !p256dh || !auth) return;
+  const persist = async (keys: SubscriptionKeys) =>
+    supabase.from("push_subscriptions").upsert(
+      {
+        user_id: userId,
+        endpoint: keys.endpoint,
+        p256dh: keys.p256dh,
+        auth: keys.auth,
+        user_agent: navigator.userAgent,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "endpoint" }
+    );
 
-  const { error } = await supabase.from("push_subscriptions").upsert(
-    {
-      user_id: userId,
-      endpoint,
-      p256dh,
-      auth,
-      user_agent: navigator.userAgent,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "endpoint" }
-  );
+  let keys = extractSubscriptionKeys(subscription);
+  if (!keys) return;
+
+  let { error } = await persist(keys);
+
+  if (error && isRecoverableSubscriptionConflict(error)) {
+    await subscription.unsubscribe().catch(() => undefined);
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+    });
+    keys = subscription ? extractSubscriptionKeys(subscription) : null;
+    if (keys) {
+      const retry = await persist(keys);
+      error = retry.error;
+    }
+  }
 
   if (error) {
     console.error("Failed to store push subscription:", error);

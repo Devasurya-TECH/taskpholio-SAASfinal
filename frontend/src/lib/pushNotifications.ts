@@ -13,7 +13,7 @@ export async function sendPushToUsers(payload: PushPayload): Promise<void> {
   if (userIds.length === 0) return;
 
   try {
-    const { error } = await supabase.functions.invoke("send-push", {
+    const { data, error } = await supabase.functions.invoke("send-push", {
       body: {
         userIds,
         title: payload.title,
@@ -25,6 +25,11 @@ export async function sendPushToUsers(payload: PushPayload): Promise<void> {
 
     if (error) {
       console.error("Push invoke failed:", error.message || error);
+      return;
+    }
+
+    if (data?.success === false) {
+      console.error("Push function rejected request:", data?.error || "Unknown send-push error");
     }
   } catch (error) {
     console.error("Push invoke crashed:", error);
