@@ -1,99 +1,197 @@
 "use client";
-import { useAuthStore } from "@/store/authStore";
-import { getRoleColor, cn, getDisplayName, getInitial } from "@/lib/utils";
-import { motion } from "framer-motion";
-import { Shield, Zap, Settings as SettingsIcon, Info, Cpu, Globe, Lock, Clock } from "lucide-react";
 
-const SettingItem = ({ icon: Icon, label, value, sub }: any) => (
-  <div className="flex items-center justify-between py-4 border-b border-white/5 last:border-0 hover:bg-white/5 px-4 rounded-xl transition-all group">
-    <div className="flex items-center gap-4">
-      <div className="p-2 rounded-lg bg-secondary/50 group-hover:bg-primary/20 transition-all">
-        <Icon className="w-4 h-4 text-muted-foreground group-hover:text-primary" />
-      </div>
-      <div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{label}</p>
-        <p className="text-sm font-bold text-foreground mt-0.5">{value}</p>
-      </div>
-    </div>
-    <p className="text-[9px] font-medium text-muted-foreground italic">{sub}</p>
-  </div>
-);
+import { useMemo, useState } from "react";
+import { Shield, Globe, Clock, Zap, Lock, Download, Trash2, Camera } from "lucide-react";
+import { useAuthStore } from "@/store/authStore";
+import { getDisplayName, getInitial, normalizeUserRole } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 
 export default function SettingsPage() {
-  const { user } = useAuthStore();
-  const displayName = getDisplayName(user?.name, user?.email);
-  const initial = getInitial(user?.name, user?.email);
+  const { user, setAuth, token } = useAuthStore();
+  const [fullName, setFullName] = useState(getDisplayName(user?.name, user?.email));
+  const [saving, setSaving] = useState(false);
+
+  const teamName = useMemo(() => {
+    if (!user?.team) return "No Team";
+    if (typeof user.team === "string") return user.team;
+    return user.team?.name || "No Team";
+  }, [user?.team]);
+
+  const saveProfile = async () => {
+    if (!user?._id) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from("profiles").update({ full_name: fullName }).eq("id", user._id);
+      if (error) throw error;
+      setAuth({ ...user, name: fullName }, token || "");
+      toast.success("Settings updated");
+    } catch {
+      toast.error("Failed to save settings");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!user) {
+    return <div className="saas-empty">Loading settings...</div>;
+  }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-12 pb-20 p-4 md:p-8">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-4xl font-black text-foreground tracking-tight uppercase">Base Configuration</h1>
-        <p className="text-muted-foreground font-black uppercase tracking-[0.2em] text-[10px] mt-2">Manage tactical preferences & Operational parameters</p>
-      </motion.div>
+    <div className="saas-page">
+      <header className="saas-header">
+        <div>
+          <p className="saas-heading-eyebrow">Configuration</p>
+          <h1 className="saas-heading-title">Settings</h1>
+          <p className="saas-heading-subtitle">Manage tactical preferences & operational parameters</p>
+        </div>
+      </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Profile Briefing */}
-        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }} className="lg:col-span-1 space-y-6">
-          <div className="glass rounded-[2rem] p-8 border border-white/10 shadow-2xl text-center relative overflow-hidden group">
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="relative z-10">
-              <div className="w-24 h-24 rounded-[2rem] bg-primary/20 border border-primary/30 mx-auto flex items-center justify-center text-primary text-4xl font-black shadow-lg shadow-primary/20">
-                {initial}
+      <section className="saas-settings-grid">
+        <aside style={{ display: "grid", gap: "0.9rem" }}>
+          <article className="saas-glass saas-settings-card">
+            <div className="saas-profile-avatar">{getInitial(user?.name, user?.email)}</div>
+            <button
+              type="button"
+              className="saas-btn-secondary"
+              style={{ position: "relative", top: "-0.8rem", left: "50%", transform: "translateX(-50%)" }}
+            >
+              <Camera size={13} /> Update
+            </button>
+
+            <div style={{ textAlign: "center", marginTop: "-0.25rem" }}>
+              <p className="saas-team-title">{getDisplayName(user?.name, user?.email)}</p>
+              <p className="saas-team-subtitle">{user?.email}</p>
+              <span className="saas-chip primary" style={{ marginTop: "0.45rem" }}>
+                Member Status - Active
+              </span>
+            </div>
+
+            <div style={{ display: "grid", gap: "0.6rem", marginTop: "0.9rem" }}>
+              <label className="saas-settings-field">
+                <span className="saas-settings-label">Full Name</span>
+                <input className="saas-settings-value" value={fullName} onChange={(event) => setFullName(event.target.value)} />
+              </label>
+
+              <label className="saas-settings-field">
+                <span className="saas-settings-label">Email</span>
+                <input className="saas-settings-value" value={user.email} disabled />
+              </label>
+
+              <label className="saas-settings-field">
+                <span className="saas-settings-label">Role</span>
+                <input className="saas-settings-value" value={normalizeUserRole(user.role)} disabled />
+              </label>
+
+              <label className="saas-settings-field">
+                <span className="saas-settings-label">Team</span>
+                <input className="saas-settings-value" value={teamName} disabled />
+              </label>
+            </div>
+
+            <button type="button" className="saas-btn-primary" style={{ width: "100%", marginTop: "0.86rem" }} onClick={saveProfile} disabled={saving}>
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </article>
+
+          <article className="saas-glass saas-settings-card">
+            <div className="saas-pill-row" style={{ justifyContent: "space-between" }}>
+              <div className="saas-pill-row">
+                <Shield size={15} style={{ color: "#34d399" }} />
+                <p className="saas-card-title" style={{ fontSize: "1rem" }}>Security Clearance</p>
               </div>
-              <h3 className="text-xl font-black text-foreground mt-6 tracking-tight">{displayName}</h3>
-              <p className="text-xs text-muted-foreground font-medium mt-1">{user?.email}</p>
-              <div className={cn("mt-4 inline-block px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border", getRoleColor(user?.role || "Member"))}>
-                {user?.role} STATUS
+            </div>
+            <p className="saas-card-sub" style={{ marginTop: "0.5rem" }}>
+              Your account is secured with RSA-2048 encryption and multi-factor intelligence protocols.
+            </p>
+
+            <div className="saas-list">
+              <button type="button" className="saas-quick-link">Change Password</button>
+              <button type="button" className="saas-quick-link">Two-Factor Auth</button>
+              <button type="button" className="saas-quick-link">Active Sessions</button>
+            </div>
+          </article>
+        </aside>
+
+        <section style={{ display: "grid", gap: "0.9rem" }}>
+          <article className="saas-glass saas-settings-card">
+            <div className="saas-pill-row" style={{ justifyContent: "space-between" }}>
+              <div className="saas-pill-row">
+                <Zap size={15} style={{ color: "#8f97ff" }} />
+                <p className="saas-card-title" style={{ fontSize: "1rem" }}>System Parameters</p>
               </div>
             </div>
-          </div>
 
-          <div className="glass rounded-2xl p-6 border border-white/5 space-y-4">
-             <div className="flex items-center gap-3">
-                <Shield className="w-4 h-4 text-primary" />
-                <h4 className="text-xs font-black uppercase tracking-widest text-foreground">Security Clearance</h4>
-             </div>
-             <p className="text-[10px] text-muted-foreground leading-relaxed">Your account is secured with RSA-2048 encryption and multi-factor intelligence protocols.</p>
-          </div>
-        </motion.div>
+            <div className="saas-list">
+              <div className="saas-list-item">
+                <div className="saas-pill-row" style={{ justifyContent: "space-between" }}>
+                  <span className="saas-pill-row"><Globe size={13} /> <span className="saas-settings-label">Operational Language</span></span>
+                  <span className="saas-team-subtitle">Standard Intelligence Format</span>
+                </div>
+                <p className="saas-list-title">English (Unified)</p>
+              </div>
 
-        {/* Tactical Settings */}
-        <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }} className="lg:col-span-2 space-y-8">
-          <section className="glass rounded-[2.5rem] p-10 border border-white/5 shadow-2xl">
-            <div className="flex items-center gap-4 mb-8">
-               <SettingsIcon className="w-6 h-6 text-primary" />
-               <h3 className="font-black text-xl text-foreground uppercase tracking-tight">System Parameters</h3>
-            </div>
-            <div className="space-y-2">
-              <SettingItem icon={Globe} label="Operational Language" value="English (Unified)" sub="Standard Intelligence Format" />
-              <SettingItem icon={Clock} label="Timezone Sync" value="UTC-05:00 (EST)" sub="Automatic Tactical Sync" />
-              <SettingItem icon={Zap} label="Interface Velocity" value="High Performance" sub="Optimized for Mission Speed" />
-              <SettingItem icon={Lock} label="Data Privacy" value="Strict Encryption" sub="Metadata Redacted by Default" />
-            </div>
-          </section>
+              <div className="saas-list-item">
+                <div className="saas-pill-row" style={{ justifyContent: "space-between" }}>
+                  <span className="saas-pill-row"><Clock size={13} /> <span className="saas-settings-label">Timezone Sync</span></span>
+                  <span className="saas-team-subtitle">Automatic Tactical Sync</span>
+                </div>
+                <p className="saas-list-title">UTC+05:30 (IST)</p>
+              </div>
 
-          <section className="glass rounded-[2.5rem] p-10 border border-white/5 shadow-2xl">
-            <div className="flex items-center gap-4 mb-8">
-               <Info className="w-6 h-6 text-emerald-400" />
-               <h3 className="font-black text-xl text-foreground uppercase tracking-tight">Intelligence Matrix</h3>
+              <div className="saas-list-item">
+                <div className="saas-pill-row" style={{ justifyContent: "space-between" }}>
+                  <span className="saas-pill-row"><Zap size={13} /> <span className="saas-settings-label">Interface Velocity</span></span>
+                  <span className="saas-team-subtitle">Optimized for Mission Speed</span>
+                </div>
+                <p className="saas-list-title">High Performance</p>
+              </div>
+
+              <div className="saas-list-item">
+                <div className="saas-pill-row" style={{ justifyContent: "space-between" }}>
+                  <span className="saas-pill-row"><Lock size={13} /> <span className="saas-settings-label">Data Privacy</span></span>
+                  <span className="saas-team-subtitle">Metadata Redacted by Default</span>
+                </div>
+                <p className="saas-list-title">Strict Encryption</p>
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+          </article>
+
+          <article className="saas-glass saas-settings-card">
+            <div className="saas-pill-row">
+              <div style={{ width: "0.42rem", height: "0.42rem", borderRadius: "999px", background: "#22c55e" }} />
+              <p className="saas-card-title" style={{ fontSize: "1rem" }}>Application Matrix</p>
+            </div>
+
+            <div style={{ marginTop: "0.7rem", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: "0.55rem" }}>
               {[
-                { label: "Matrix Code", val: "v1.4.2-PROD", icon: Cpu },
-                { label: "Core Protocol", val: "NextFS-Elite", icon: Zap },
-                { label: "Data Sink", val: "Taskpholio-Cloud", icon: Globe },
-                { label: "Security Level", val: "Lvl 5 Admin", icon: Shield },
-              ].map((item, idx) => (
-                <div key={idx} className="bg-secondary/20 p-4 rounded-2xl border border-white/5">
-                   <item.icon className="w-4 h-4 text-muted-foreground mb-2" />
-                   <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">{item.label}</p>
-                   <p className="text-xs font-black text-foreground mt-0.5">{item.val}</p>
+                ["Matrix Code", "v1.4.2-PROD"],
+                ["Core Protocol", "NextFS-Elite"],
+                ["Build Status", "Stable"],
+                ["Last Deploy", "Mar 25, 2026"],
+              ].map(([label, value]) => (
+                <div key={label} className="saas-list-item" style={{ marginTop: 0 }}>
+                  <p className="saas-settings-label">{label}</p>
+                  <p className="saas-list-title">{value}</p>
                 </div>
               ))}
             </div>
-          </section>
-        </motion.div>
-      </div>
+          </article>
+
+          <article className="saas-glass saas-settings-card saas-danger-zone">
+            <p className="saas-danger-title">Danger Zone</p>
+            <p className="saas-card-sub">These actions are irreversible. Please proceed with caution.</p>
+            <div className="saas-pill-row" style={{ marginTop: "0.7rem" }}>
+              <button type="button" className="saas-btn-secondary" style={{ borderColor: "rgba(239,68,68,0.5)", color: "#fca5a5" }}>
+                <Trash2 size={14} /> Delete Account
+              </button>
+              <button type="button" className="saas-btn-secondary">
+                <Download size={14} /> Export Data
+              </button>
+            </div>
+          </article>
+        </section>
+      </section>
     </div>
   );
 }

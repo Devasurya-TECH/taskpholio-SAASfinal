@@ -1,16 +1,16 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Activity, CheckCircle2, Clock, TrendingUp } from "lucide-react";
+import { Plus, Activity, CheckCircle2, Clock3, TrendingUp } from "lucide-react";
 import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
 import { isAdmin } from "@/lib/utils";
 import { format, subDays } from "date-fns";
+import { supabase } from "@/lib/supabase";
 import CreateTaskModal from "@/components/tasks/CreateTaskModal";
 import KpiCard from "@/components/dashboard/KpiCard";
 import AnalyticsPanel from "@/components/dashboard/AnalyticsPanel";
 import ActivityTable from "@/components/dashboard/ActivityTable";
 import ActionPanel from "@/components/dashboard/ActionPanel";
-import "./dashboard.css";
 
 const COMPLETED_VISIBILITY_DAYS = 7;
 const COMPLETED_VISIBILITY_MS = COMPLETED_VISIBILITY_DAYS * 24 * 60 * 60 * 1000;
@@ -21,14 +21,47 @@ const parseTaskDate = (value?: string): Date | null => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const getGreeting = (name: string) => {
+  const hour = new Date().getHours();
+  const label = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  return `${label}, ${name}`;
+};
+
 export default function DashboardPage() {
   const { tasks, fetchTasks } = useTaskStore();
   const { user } = useAuthStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [upcomingMeetings, setUpcomingMeetings] = useState<
+    Array<{ id: string; title: string; scheduledAt: string; attendees?: number }>
+  >([]);
 
   useEffect(() => {
     fetchTasks(true);
   }, [fetchTasks]);
+
+  useEffect(() => {
+    const fetchMeetings = async () => {
+      const { data, error } = await supabase
+        .from("meetings")
+        .select("id,title,scheduled_at")
+        .gte("scheduled_at", new Date().toISOString())
+        .order("scheduled_at", { ascending: true })
+        .limit(5);
+
+      if (error) return;
+
+      setUpcomingMeetings(
+        (data || []).map((meeting: any) => ({
+          id: meeting.id,
+          title: meeting.title,
+          scheduledAt: meeting.scheduled_at,
+          attendees: 0,
+        }))
+      );
+    };
+
+    fetchMeetings();
+  }, []);
 
   const dashboardTasks = useMemo(() => {
     const now = Date.now();
@@ -88,87 +121,80 @@ export default function DashboardPage() {
   }, [trendData]);
 
   return (
-    <div className="premium-dashboard-shell">
-      <div className="ambient-glow ambient-glow-a" />
-      <div className="ambient-glow ambient-glow-b" />
-      <div className="noise-layer" />
-
-      <div className="premium-dashboard-content">
-        <div className="dashboard-hero">
-          <div>
-            <p className="hero-eyebrow">Realtime Command Center</p>
-            <h1 className="hero-title">
-              Welcome back, <span>{user?.name?.split(" ")[0] || "Operator"}</span>
-            </h1>
-            <p className="hero-subtitle">
-              Premium task intelligence with team-wide execution visibility and status telemetry.
-            </p>
-          </div>
-          {isAdmin(user?.role || "") && (
-            <button onClick={() => setIsModalOpen(true)} className="hero-cta">
-              <Plus size={16} /> Create Task
-            </button>
-          )}
+    <div className="saas-page">
+      <header className="saas-header">
+        <div>
+          <p className="saas-heading-eyebrow">Overview</p>
+          <h1 className="saas-heading-title">{getGreeting(user?.name?.split(" ")[0] || "Operator")}</h1>
+          <p className="saas-heading-subtitle">
+            Premium task intelligence with team-wide execution visibility and status telemetry.
+          </p>
         </div>
+        {isAdmin(user?.role || "") && (
+          <button onClick={() => setIsModalOpen(true)} className="saas-btn-primary">
+            <Plus size={15} /> Create Task
+          </button>
+        )}
+      </header>
 
-        <section className="kpi-grid-premium">
-          <KpiCard
-            label="TOTAL TASKS"
-            value={metrics.total.toString()}
-            description="Live objectives tracked"
-            icon={<Activity size={18} />}
-          />
-          <KpiCard
-            label="COMPLETION RATE"
-            value={`${metrics.completionRate}%`}
-            description="Operational success ratio"
-            icon={<TrendingUp size={18} />}
-          />
-          <KpiCard
-            label="IN PROGRESS"
-            value={metrics.inProgress.toString()}
-            description="Actively being executed"
-            icon={<Clock size={18} />}
-          />
-          <KpiCard
-            label="COMPLETED"
-            value={metrics.completed.toString()}
-            description="Resolved outcomes"
-            icon={<CheckCircle2 size={18} />}
-          />
-        </section>
+      <section className="saas-kpi-grid">
+        <KpiCard
+          label="TOTAL TASKS"
+          value={metrics.total.toString()}
+          description="Live objectives tracked"
+          icon={<Activity size={16} />}
+        />
+        <KpiCard
+          label="COMPLETION RATE"
+          value={`${metrics.completionRate}%`}
+          description="Overall success ratio"
+          icon={<TrendingUp size={16} />}
+        />
+        <KpiCard
+          label="IN PROGRESS"
+          value={metrics.inProgress.toString()}
+          description="Actively being executed"
+          icon={<Clock3 size={16} />}
+        />
+        <KpiCard
+          label="COMPLETED"
+          value={metrics.completed.toString()}
+          description="Resolved outcomes"
+          icon={<CheckCircle2 size={16} />}
+        />
+      </section>
 
-        <section className="analytics-grid-premium">
-          <AnalyticsPanel
-            title="Task Flow (7D)"
-            subtitle="Created vs completed momentum"
-            data={trendData}
-            xKey="day"
-            lineKey="created"
-            areaKey="completed"
-            mode="line"
-          />
-          <AnalyticsPanel
-            title="Throughput Curve"
-            subtitle="Cumulative workload with completion pulses"
-            data={throughputData}
-            xKey="day"
-            lineKey="throughput"
-            areaKey="completionPulse"
-            mode="area"
-          />
-        </section>
+      <section className="saas-chart-grid">
+        <AnalyticsPanel
+          title="Task Flow (7D)"
+          subtitle="Created vs completed momentum"
+          data={trendData}
+          xKey="day"
+          lineKey="created"
+          areaKey="completed"
+          mode="line"
+        />
+        <AnalyticsPanel
+          title="Throughput Curve"
+          subtitle="Cumulative workload with completion pulses"
+          data={throughputData}
+          xKey="day"
+          lineKey="throughput"
+          areaKey="completionPulse"
+          mode="area"
+        />
+      </section>
 
-        <section className="content-grid-premium">
-          <ActivityTable tasks={dashboardTasks} />
-          <ActionPanel
-            completed={metrics.completed}
-            inProgress={metrics.inProgress}
-            pending={metrics.pending + metrics.blocked}
-            showTeamWorkspace={isAdmin(user?.role || "")}
-          />
-        </section>
-      </div>
+      <section className="saas-split-grid">
+        <ActivityTable tasks={dashboardTasks} />
+        <ActionPanel
+          completed={metrics.completed}
+          inProgress={metrics.inProgress}
+          pending={metrics.pending + metrics.blocked}
+          showTeamWorkspace={isAdmin(user?.role || "")}
+          upcomingMeetings={upcomingMeetings}
+        />
+      </section>
 
       {isModalOpen && <CreateTaskModal onClose={() => setIsModalOpen(false)} />}
     </div>

@@ -1,31 +1,39 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import { Users } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Code2, Megaphone, Shield, Search, Users } from "lucide-react";
 import { useAdminStore } from "@/store/adminStore";
-import { getDisplayName, getInitial } from "@/lib/utils";
+import { getDisplayName, getInitial, normalizeUserRole } from "@/lib/utils";
 
 type TeamSection = {
   key: "technical" | "social" | "cybersecurity";
   title: string;
+  subtitle: string;
   aliases: string[];
+  icon: typeof Code2;
 };
 
 const TEAM_SECTIONS: TeamSection[] = [
   {
     key: "technical",
     title: "Technical Team",
+    subtitle: "Engineering & development",
     aliases: ["technical", "tech", "engineering", "developer", "development"],
+    icon: Code2,
   },
   {
     key: "social",
     title: "Social Media Team",
+    subtitle: "Content & growth",
     aliases: ["social", "media", "marketing", "content"],
+    icon: Megaphone,
   },
   {
     key: "cybersecurity",
     title: "Cybersecurity Team",
+    subtitle: "Security & compliance",
     aliases: ["cyber", "security", "infosec"],
+    icon: Shield,
   },
 ];
 
@@ -33,6 +41,7 @@ const normalize = (value: string | undefined | null) => (value || "").toLowerCas
 
 export default function TeamsPage() {
   const { teams, fetchTeams, isLoading } = useAdminStore();
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     fetchTeams();
@@ -47,13 +56,19 @@ export default function TeamsPage() {
 
     TEAM_SECTIONS.forEach((section) => {
       const matchedTeams = (teams || []).filter((team: any) => {
-        const name = normalize(team?.name);
-        return section.aliases.some((alias) => name.includes(alias));
+        const teamName = normalize(team?.name);
+        return section.aliases.some((alias) => teamName.includes(alias));
       });
 
-      const members = matchedTeams.flatMap((team: any) => team?.members || []);
+      const allMembers = matchedTeams.flatMap((team: any) =>
+        (team?.members || []).map((member: any) => ({
+          ...member,
+          __teamName: team?.name || section.title,
+        }))
+      );
+
       const deduped = Array.from(
-        new Map(members.map((member: any) => [member?._id || member?.email, member])).values()
+        new Map(allMembers.map((member: any) => [member?._id || member?.email, member])).values()
       );
 
       result[section.key] = deduped;
@@ -62,70 +77,142 @@ export default function TeamsPage() {
     return result;
   }, [teams]);
 
-  if (isLoading) {
-    return (
-      <div className="mx-auto max-w-6xl space-y-6 pb-20">
-        <div className="h-8 w-40 animate-pulse rounded-xl bg-secondary" />
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          {TEAM_SECTIONS.map((section) => (
-            <div key={section.key} className="h-64 animate-pulse rounded-2xl border border-border/50 bg-secondary/20" />
-          ))}
-        </div>
-      </div>
+  const allMembers = useMemo(() => {
+    const merged = Object.values(membersBySection).flat();
+    const deduped = Array.from(
+      new Map(merged.map((member: any) => [member?._id || member?.email, member])).values()
     );
-  }
+
+    const normalizedSearch = search.trim().toLowerCase();
+    if (!normalizedSearch) return deduped;
+
+    return deduped.filter((member: any) => {
+      const teamName = normalize(member.__teamName);
+      const displayName = normalize(getDisplayName(member?.name, member?.email));
+      const email = normalize(member?.email);
+      return (
+        displayName.includes(normalizedSearch) ||
+        email.includes(normalizedSearch) ||
+        teamName.includes(normalizedSearch)
+      );
+    });
+  }, [membersBySection, search]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 pb-20">
-      <div>
-        <h1 className="text-3xl font-black tracking-tight text-foreground">Teams</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Technical, Social Media, and Cybersecurity team members</p>
-      </div>
+    <div className="saas-page">
+      <header className="saas-header">
+        <div>
+          <p className="saas-heading-eyebrow">Organization</p>
+          <h1 className="saas-heading-title">Teams</h1>
+          <p className="saas-heading-subtitle">Technical, Social, Cybersecurity team members</p>
+        </div>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <label className="saas-inline-input">
+          <Search size={14} />
+          <input
+            type="text"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search teams..."
+          />
+        </label>
+      </header>
+
+      <section className="saas-team-grid">
         {TEAM_SECTIONS.map((section) => {
+          const Icon = section.icon;
           const members = membersBySection[section.key] || [];
+
           return (
-            <div key={section.key} className="glass rounded-2xl border border-border/60 p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-black text-foreground">{section.title}</h2>
-                <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-primary">
-                  <Users className="h-3 w-3" />
-                  {members.length}
+            <article key={section.key} className="saas-glass saas-team-card">
+              <div className="saas-team-head">
+                <div style={{ display: "flex", gap: "0.62rem", minWidth: 0 }}>
+                  <div className="saas-team-icon">
+                    <Icon size={15} />
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <p className="saas-team-title">{section.title}</p>
+                    <p className="saas-team-subtitle">{section.subtitle}</p>
+                  </div>
+                </div>
+                <span className="saas-chip">
+                  <Users size={11} style={{ marginRight: "0.25rem" }} />
+                  {members.length} member{members.length === 1 ? "" : "s"}
                 </span>
               </div>
 
-              {members.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border/60 bg-secondary/20 px-3 py-4 text-xs text-muted-foreground">
-                  No members in this team yet.
-                </div>
-              ) : (
-                <ul className="space-y-2">
-                  {members.map((member: any) => (
-                    <li
-                      key={member?._id || member?.email}
-                      className="flex items-center gap-3 rounded-xl border border-border/50 bg-background/40 px-3 py-2.5"
-                    >
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-xs font-black text-primary">
-                        {getInitial(member?.name, member?.email)}
+              <div className="saas-team-members">
+                {isLoading ? (
+                  <p className="saas-empty">Loading members...</p>
+                ) : members.length === 0 ? (
+                  <p className="saas-empty">No members in this team yet.</p>
+                ) : (
+                  members.map((member: any) => (
+                    <div key={member?._id || member?.email} className="saas-member-row">
+                      <div className="saas-member-left">
+                        <span className="saas-member-avatar">{getInitial(member?.name, member?.email)}</span>
+                        <div style={{ minWidth: 0 }}>
+                          <p className="saas-member-name">{getDisplayName(member?.name, member?.email)}</p>
+                          <p className="saas-member-mail">{member?.email || "No email"}</p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground">
-                          {getDisplayName(member?.name, member?.email)}
-                        </p>
-                        <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                          {member?.role || "Member"}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+                      <span className="saas-role-pill">{normalizeUserRole(member?.role)}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </article>
           );
         })}
-      </div>
+      </section>
+
+      <section className="saas-glass saas-team-table-card">
+        <div className="saas-card-head">
+          <div>
+            <h3 className="saas-card-title">All Members</h3>
+            <p className="saas-card-sub">
+              {allMembers.length} people across {Object.values(membersBySection).filter((items) => items.length > 0).length} teams
+            </p>
+          </div>
+        </div>
+
+        <div className="saas-table-wrap">
+          <table className="saas-table">
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Team</th>
+                <th>Role</th>
+                <th>Email</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allMembers.map((member: any) => (
+                <tr key={member?._id || member?.email}>
+                  <td>
+                    <div className="saas-member-left">
+                      <span className="saas-member-avatar">{getInitial(member?.name, member?.email)}</span>
+                      <span className="saas-member-name">{getDisplayName(member?.name, member?.email)}</span>
+                    </div>
+                  </td>
+                  <td className="muted">{member.__teamName || "No Team"}</td>
+                  <td>
+                    <span className="saas-role-pill">{normalizeUserRole(member?.role)}</span>
+                  </td>
+                  <td className="muted">{member?.email || "-"}</td>
+                </tr>
+              ))}
+              {allMembers.length === 0 && (
+                <tr>
+                  <td colSpan={4}>
+                    <p className="saas-empty">No team members available yet.</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }
-

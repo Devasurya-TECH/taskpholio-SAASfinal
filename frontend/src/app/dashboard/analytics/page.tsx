@@ -1,27 +1,19 @@
 "use client";
-import { useEffect, useState, useMemo } from "react";
-import { motion } from "framer-motion";
-import { 
-  TrendingUp, Users, Target, Zap, 
-  BarChart3, PieChart as PieIcon, Activity,
-  Calendar, CheckCircle2, AlertCircle
-} from "lucide-react";
-import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, BarChart, Bar, CartesianGrid, Legend
-} from "recharts";
-import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 
+import { useEffect, useMemo, useState } from "react";
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Activity, Clock3, TrendingUp, Users, Zap } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-
-const COLORS = ["#3b82f6", "#22c55e", "#a855f7", "#f59e0b", "#ef4444"];
+import { formatDate } from "@/lib/utils";
 
 interface AnalyticsTaskRow {
   id: string;
+  title: string;
   status: string;
   priority: string;
   assigned_team: string | null;
+  assigned_to: string | null;
+  due_date: string | null;
 }
 
 interface AnalyticsTeamRow {
@@ -29,254 +21,249 @@ interface AnalyticsTeamRow {
   name: string;
 }
 
-interface AnalyticsTeamStats {
-  _id: string;
-  name: string;
-  memberCount: number;
-  stats: {
-    totalTasks: number;
-    completedTasks: number;
-  };
-}
+const STATUS_COLORS = ["#6366f1", "#22c55e", "#9ca3af"];
 
-const StatCard = ({ label, value, sub, icon: Icon, color }: any) => (
-  <motion.div whileHover={{ y: -5 }} className="glass rounded-[2rem] p-8 border border-white/5 shadow-2xl space-y-4">
-    <div className={cn("p-4 rounded-2xl w-fit", color)}>
-      <Icon className="w-6 h-6" />
-    </div>
-    <div>
-      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
-      <p className="text-4xl font-black text-foreground tracking-tight mt-1">{value}</p>
-      <p className="text-xs text-muted-foreground mt-2 font-medium">{sub}</p>
-    </div>
-  </motion.div>
-);
+const normalizeStatus = (status: string): "completed" | "in-progress" | "pending" => {
+  const value = (status || "").toLowerCase();
+  if (value === "completed") return "completed";
+  if (value === "in_progress" || value === "in-progress") return "in-progress";
+  return "pending";
+};
 
 export default function AnalyticsPage() {
   const [tasks, setTasks] = useState<AnalyticsTaskRow[]>([]);
-  const [teams, setTeams] = useState<AnalyticsTeamStats[]>([]);
+  const [teams, setTeams] = useState<AnalyticsTeamRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchAnalytics = async () => {
+    const fetchData = async () => {
       try {
-        const { data: tasksData, error: tasksError } = await supabase
+        const { data: taskRows, error: taskError } = await supabase
           .from("tasks")
-          .select("id,status,priority,assigned_team");
-        if (tasksError) throw tasksError;
+          .select("id,title,status,priority,assigned_team,assigned_to,due_date")
+          .order("created_at", { ascending: false });
+        if (taskError) throw taskError;
 
-        const { data: teamsData, error: teamsError } = await supabase
-          .from("teams")
-          .select("id,name")
-          .order("created_at", { ascending: true });
-        if (teamsError) throw teamsError;
+        const { data: teamRows, error: teamError } = await supabase.from("teams").select("id,name");
+        if (teamError) throw teamError;
 
-        const normalizedTasks = (tasksData || []) as AnalyticsTaskRow[];
-        const dbTeams = (teamsData || []) as AnalyticsTeamRow[];
-        setTasks(normalizedTasks);
-
-        if (dbTeams.length === 0) {
-          setTeams([]);
-          return;
-        }
-
-        const teamIds = dbTeams.map((team) => team.id);
-        const { data: membersData, error: membersError } = await supabase
-          .from("profiles")
-          .select("id,team")
-          .in("team", teamIds);
-        if (membersError) throw membersError;
-
-        const memberCountMap = new Map<string, number>();
-        (membersData || []).forEach((member: any) => {
-          const teamId = member.team;
-          if (!teamId) return;
-          memberCountMap.set(teamId, (memberCountMap.get(teamId) || 0) + 1);
-        });
-
-        const taskCountMap = new Map<string, { totalTasks: number; completedTasks: number }>();
-        dbTeams.forEach((team) => {
-          taskCountMap.set(team.id, { totalTasks: 0, completedTasks: 0 });
-        });
-
-        normalizedTasks.forEach((task) => {
-          if (!task.assigned_team || !taskCountMap.has(task.assigned_team)) return;
-          const current = taskCountMap.get(task.assigned_team)!;
-          current.totalTasks += 1;
-          if ((task.status || "").toLowerCase() === "completed") {
-            current.completedTasks += 1;
-          }
-        });
-
-        const hydratedTeams: AnalyticsTeamStats[] = dbTeams.map((team) => ({
-          _id: team.id,
-          name: team.name,
-          memberCount: memberCountMap.get(team.id) || 0,
-          stats: taskCountMap.get(team.id) || { totalTasks: 0, completedTasks: 0 },
-        }));
-
-        setTeams(hydratedTeams);
-      } catch (err) {
-        toast.error("Failed to sync intelligence data");
+        setTasks((taskRows || []) as AnalyticsTaskRow[]);
+        setTeams((teamRows || []) as AnalyticsTeamRow[]);
       } finally {
         setLoading(false);
       }
     };
-    fetchAnalytics();
+
+    fetchData();
   }, []);
 
-  const taskStats = useMemo(() => {
-    const statusOf = (task: AnalyticsTaskRow) => (task.status || "").toLowerCase();
-    const priorityOf = (task: AnalyticsTaskRow) => (task.priority || "").toLowerCase();
+  const completionRate = useMemo(() => {
+    if (!tasks.length) return 0;
+    const completed = tasks.filter((task) => normalizeStatus(task.status) === "completed").length;
+    return Math.round((completed / tasks.length) * 100);
+  }, [tasks]);
 
-    const statusData = [
-      { name: "Completed", value: tasks.filter((task) => statusOf(task) === "completed").length },
-      { name: "In Progress", value: tasks.filter((task) => statusOf(task) === "in-progress" || statusOf(task) === "in_progress").length },
-      { name: "Started", value: tasks.filter((task) => statusOf(task) === "pending").length },
-    ].filter(d => d.value > 0);
+  const activeMembers = useMemo(() => {
+    const members = new Set(tasks.map((task) => task.assigned_to).filter(Boolean));
+    return members.size;
+  }, [tasks]);
 
-    const priorityData = [
-      { name: "Urgent", value: tasks.filter((task) => priorityOf(task) === "urgent" || priorityOf(task) === "critical").length },
-      { name: "High", value: tasks.filter((task) => priorityOf(task) === "high").length },
-      { name: "Medium", value: tasks.filter((task) => priorityOf(task) === "medium").length },
-      { name: "Low", value: tasks.filter((task) => priorityOf(task) === "low").length },
-    ].filter(d => d.value > 0);
+  const pendingCount = useMemo(
+    () => tasks.filter((task) => normalizeStatus(task.status) !== "completed").length,
+    [tasks]
+  );
 
-    return { statusData, priorityData };
+  const statusData = useMemo(() => {
+    const completed = tasks.filter((task) => normalizeStatus(task.status) === "completed").length;
+    const inProgress = tasks.filter((task) => normalizeStatus(task.status) === "in-progress").length;
+    const pending = tasks.filter((task) => normalizeStatus(task.status) === "pending").length;
+    return [
+      { name: "In Progress", value: inProgress },
+      { name: "Completed", value: completed },
+      { name: "Not Started", value: pending },
+    ];
   }, [tasks]);
 
   const teamPerformance = useMemo(() => {
-    return teams.map(t => ({
-      name: t.name,
-      completed: t.stats?.completedTasks || 0,
-      total: t.stats?.totalTasks || 0,
-      efficiency: t.stats?.totalTasks ? Math.round((t.stats.completedTasks / t.stats.totalTasks) * 100) : 0
-    }));
-  }, [teams]);
+    if (!teams.length) return [];
+    return teams.map((team) => {
+      const teamTasks = tasks.filter((task) => task.assigned_team === team.id);
+      const completed = teamTasks.filter((task) => normalizeStatus(task.status) === "completed").length;
+      return {
+        name: team.name.replace(" Team", ""),
+        completed,
+        total: teamTasks.length,
+      };
+    });
+  }, [tasks, teams]);
 
-  if (loading) return (
-    <div className="space-y-8 animate-pulse p-8">
-      <div className="h-12 w-64 bg-secondary rounded-2xl" />
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-        {[...Array(4)].map((_, i) => <div key={i} className="h-40 bg-secondary rounded-[2rem]" />)}
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div className="h-96 bg-secondary rounded-[2rem]" />
-        <div className="h-96 bg-secondary rounded-[2rem]" />
-      </div>
-    </div>
-  );
+  const visibleTasks = useMemo(() => tasks.slice(0, 8), [tasks]);
 
   return (
-    <div className="max-w-7xl mx-auto space-y-12 pb-20 p-4 md:p-8">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+    <div className="saas-page">
+      <header className="saas-header">
         <div>
-          <h1 className="text-4xl font-black text-foreground tracking-tight">Intelligence Dashboard</h1>
-          <p className="text-muted-foreground font-black uppercase tracking-[0.2em] text-[10px] mt-2">Strategic Analytics & Performance Metrics</p>
+          <p className="saas-heading-eyebrow">Advanced Analytics</p>
+          <h1 className="saas-heading-title">Analytics</h1>
+          <p className="saas-heading-subtitle">Strategic analytics & performance metrics</p>
         </div>
-        <div className="flex items-center gap-4 bg-secondary/30 border border-border/50 p-2 rounded-2xl">
-          <button className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20">LIVE OPS</button>
-          <button className="px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground">ARCHIVE</button>
+        <div className="saas-pill-row">
+          <button type="button" className="saas-btn-primary">Live Ops</button>
+          <button type="button" className="saas-btn-secondary">Archive</button>
         </div>
-      </div>
+      </header>
 
-      {/* High Level Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
-        <StatCard label="Operational Completion" value={`${Math.round((tasks.filter((task) => (task.status || "").toLowerCase() === "completed").length / (tasks.length || 1)) * 100)}%`} sub="Overall Mission Success Rate" icon={TrendingUp} color="bg-emerald-500/10 text-emerald-400" />
-        <StatCard label="Active Personnel" value={teams.reduce((acc, team) => acc + (team.memberCount || 0), 0)} sub="Across All Tactical Squads" icon={Users} color="bg-blue-500/10 text-blue-400" />
-        <StatCard label="Pending Objectives" value={tasks.filter((task) => (task.status || "").toLowerCase() !== "completed").length} sub="Requiring Immediate Intelligence" icon={Target} color="bg-purple-500/10 text-purple-400" />
-        <StatCard label="System Velocity" value="8.4" sub="Tasks Resolved Per Operative" icon={Zap} color="bg-yellow-500/10 text-yellow-400" />
-      </div>
+      <section className="saas-kpi-grid">
+        <article className="saas-glass saas-kpi-card">
+          <div className="saas-kpi-card-head">
+            <span className="saas-kpi-icon" style={{ color: "#34d399" }}><TrendingUp size={16} /></span>
+            <p className="saas-kpi-label">Completion Rate</p>
+          </div>
+          <p className="saas-kpi-value">{completionRate}%</p>
+          <p className="saas-kpi-subtext">Overall task success</p>
+        </article>
+        <article className="saas-glass saas-kpi-card">
+          <div className="saas-kpi-card-head">
+            <span className="saas-kpi-icon"><Users size={16} /></span>
+            <p className="saas-kpi-label">Active Members</p>
+          </div>
+          <p className="saas-kpi-value">{activeMembers}</p>
+          <p className="saas-kpi-subtext">Across all squads</p>
+        </article>
+        <article className="saas-glass saas-kpi-card">
+          <div className="saas-kpi-card-head">
+            <span className="saas-kpi-icon" style={{ color: "#fbbf24" }}><Clock3 size={16} /></span>
+            <p className="saas-kpi-label">Pending Tasks</p>
+          </div>
+          <p className="saas-kpi-value">{pendingCount}</p>
+          <p className="saas-kpi-subtext">Requiring attention</p>
+        </article>
+        <article className="saas-glass saas-kpi-card">
+          <div className="saas-kpi-card-head">
+            <span className="saas-kpi-icon"><Zap size={16} /></span>
+            <p className="saas-kpi-label">System Velocity</p>
+          </div>
+          <p className="saas-kpi-value">{tasks.length ? (tasks.length / Math.max(activeMembers, 1)).toFixed(1) : "0.0"}</p>
+          <p className="saas-kpi-subtext">Tasks per member</p>
+        </article>
+      </section>
 
-      {/* Strategic Charts */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-        {/* Status Distribution */}
-        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="glass rounded-[2.5rem] p-10 border border-white/5 shadow-2xl">
-          <div className="flex items-center justify-between mb-8">
-            <div className="space-y-1">
-              <h3 className="font-black text-xl text-foreground">Mission Status Distribution</h3>
-              <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Real-time objective states</p>
+      <section className="saas-chart-grid">
+        <article className="saas-glass saas-chart-card">
+          <div className="saas-card-head">
+            <div>
+              <h3 className="saas-card-title">Task Status Distribution</h3>
+              <p className="saas-card-sub">Real-time objective states</p>
             </div>
-            <BarChart3 className="w-5 h-5 text-primary" />
           </div>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={taskStats.statusData} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={5} dataKey="value">
-                  {taskStats.statusData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ backgroundColor: "#1e1e2e", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.1)", color: "#fff" }}
-                  itemStyle={{ color: "#fff", fontWeight: "bold" }}
-                />
-                <Legend iconType="circle" />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </motion.div>
-
-        {/* Squad Comparison */}
-        <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass rounded-[2.5rem] p-10 border border-white/5 shadow-2xl">
-          <div className="flex items-center justify-between mb-8">
-            <div className="space-y-1">
-              <h3 className="font-black text-xl text-foreground">Tactical Squad Performance</h3>
-              <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Efficiency vs Objective Volume</p>
-            </div>
-            <Activity className="w-5 h-5 text-emerald-400" />
-          </div>
-          <div className="h-80 w-full">
-            {teamPerformance.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={teamPerformance}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: "bold" }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: "bold" }} />
-                  <Tooltip
-                    cursor={{ fill: "rgba(255,255,255,0.05)" }}
-                    contentStyle={{ backgroundColor: "#1e1e2e", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.1)", color: "#fff" }}
-                  />
-                  <Bar dataKey="completed" fill="#3b82f6" radius={[6, 6, 0, 0]} name="Completed" />
-                  <Bar dataKey="total" fill="rgba(59, 130, 246, 0.2)" radius={[6, 6, 0, 0]} name="Total Capacity" />
-                </BarChart>
-              </ResponsiveContainer>
+          <div className="saas-chart-wrap">
+            {loading ? (
+              <p className="saas-empty">Loading chart data...</p>
             ) : (
-              <div className="h-full rounded-2xl border border-border/50 bg-secondary/20 flex items-center justify-center px-6 text-center">
-                <p className="text-sm text-muted-foreground">
-                  No teams found yet. Create teams to see live squad performance analytics here.
-                </p>
-              </div>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={statusData} dataKey="value" cx="50%" cy="50%" innerRadius={58} outerRadius={88} paddingAngle={3}>
+                    {statusData.map((_, index) => (
+                      <Cell key={`status-${index}`} fill={STATUS_COLORS[index % STATUS_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      background: "#161b2f",
+                      border: "1px solid rgba(99,102,241,0.28)",
+                      borderRadius: "12px",
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
             )}
           </div>
-        </motion.div>
-      </div>
+          <div className="saas-pill-row">
+            {statusData.map((status, index) => (
+              <span key={status.name} className="saas-chip muted" style={{ display: "inline-flex", gap: "0.25rem" }}>
+                <span style={{ width: "0.42rem", height: "0.42rem", borderRadius: "999px", background: STATUS_COLORS[index] }} />
+                {status.name}
+              </span>
+            ))}
+          </div>
+        </article>
 
-      {/* Priority Intelligence */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-[2.5rem] p-10 border border-white/5 shadow-2xl">
-        <div className="flex items-center gap-4 mb-10">
-          <div className="p-3 bg-red-500/10 rounded-2xl">
-            <AlertCircle className="w-6 h-6 text-red-400" />
+        <article className="saas-glass saas-chart-card">
+          <div className="saas-card-head">
+            <div>
+              <h3 className="saas-card-title">Team Performance</h3>
+              <p className="saas-card-sub">Efficiency vs objective volume</p>
+            </div>
+            <Activity size={16} style={{ color: "#34d399" }} />
           </div>
+          <div className="saas-chart-wrap">
+            {teamPerformance.length === 0 ? (
+              <p className="saas-empty">No team data available yet.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={teamPerformance}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fill: "rgba(156,166,198,0.88)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "rgba(156,166,198,0.88)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "#161b2f",
+                      border: "1px solid rgba(99,102,241,0.28)",
+                      borderRadius: "12px",
+                    }}
+                  />
+                  <Bar dataKey="total" fill="rgba(99,102,241,0.25)" radius={[8, 8, 0, 0]} />
+                  <Bar dataKey="completed" fill="#22c55e" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </article>
+      </section>
+
+      <section className="saas-glass saas-table-card">
+        <div className="saas-card-head">
           <div>
-            <h3 className="font-black text-2xl text-foreground">Threat Level Analytics</h3>
-            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Objective priority distribution across the operation</p>
+            <h3 className="saas-card-title">Task Breakdown</h3>
+            <p className="saas-card-sub">Detailed task-level metrics</p>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-           {taskStats.priorityData.map((item, idx) => (
-             <div key={idx} className="bg-secondary/20 p-6 rounded-3xl border border-border/50 flex items-center justify-between">
-                <div>
-                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{item.name}</p>
-                   <p className="text-2xl font-black text-foreground">{item.value}</p>
-                </div>
-                <div className={cn("w-2 h-12 rounded-full", 
-                  item.name === "Urgent" ? "bg-red-500" : item.name === "High" ? "bg-orange-500" : item.name === "Medium" ? "bg-yellow-500" : "bg-emerald-500"
-                )} />
-             </div>
-           ))}
+        <div className="saas-table-wrap">
+          <table className="saas-table">
+            <thead>
+              <tr>
+                <th>Task</th>
+                <th>Team</th>
+                <th>Priority</th>
+                <th>Deadline</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleTasks.map((task) => {
+                const normalized = normalizeStatus(task.status);
+                return (
+                  <tr key={task.id}>
+                    <td>{task.title}</td>
+                    <td className="muted">{teams.find((team) => team.id === task.assigned_team)?.name || "—"}</td>
+                    <td>
+                      <span className={`saas-chip ${task.priority === "critical" ? "danger" : task.priority === "high" ? "warning" : "muted"}`}>
+                        {task.priority}
+                      </span>
+                    </td>
+                    <td className="muted">{task.due_date ? formatDate(task.due_date) : "No deadline"}</td>
+                    <td>
+                      <span className={`saas-chip ${normalized === "completed" ? "success" : normalized === "in-progress" ? "primary" : "muted"}`}>
+                        {normalized === "in-progress" ? "In Progress" : normalized === "completed" ? "Completed" : "Not Started"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      </motion.div>
+      </section>
     </div>
   );
 }

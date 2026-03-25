@@ -1,7 +1,7 @@
 /* auth.css */
 .auth-container {
   min-height: 100vh;
-  background-color: var(--bg-base);
+  background: radial-gradient(520px 320px at 50% 0%, rgba(99, 102, 241, 0.16), transparent 65%), var(--bg-base);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -16,7 +16,7 @@
   transform: translateX(-50%);
   width: 24rem;
   height: 24rem;
-  background-color: var(--bg-accent-transparent);
+  background-color: rgba(99, 102, 241, 0.22);
   border-radius: 50%;
   filter: blur(60px);
   pointer-events: none;
@@ -61,11 +61,11 @@
 }
 
 .auth-card {
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-xl);
+  background-color: rgba(19, 19, 26, 0.9);
+  border: 1px solid rgba(63, 63, 70, 0.78);
+  border-radius: 1rem;
   padding: 2rem;
-  box-shadow: var(--shadow-base);
+  box-shadow: 0 22px 40px rgba(0, 0, 0, 0.45);
 }
 
 .auth-card-title {
@@ -112,8 +112,8 @@
 
 .auth-input {
   width: 100%;
-  background-color: var(--bg-base);
-  border: 1px solid var(--border-color);
+  background-color: rgba(10, 10, 15, 0.9);
+  border: 1px solid rgba(63, 63, 70, 0.85);
   border-radius: var(--radius-md);
   padding: 0.625rem 1rem 0.625rem 2.5rem;
   color: var(--text-primary);
@@ -170,7 +170,7 @@
   justify-content: center;
   gap: 0.5rem;
   background-color: var(--bg-accent);
-  color: var(--text-inverse);
+  color: #ffffff;
   font-weight: 600;
   border-radius: var(--radius-md);
   padding: 0.625rem;
@@ -181,6 +181,7 @@
 .auth-submit-btn:hover:not(:disabled) {
   background-color: var(--bg-accent-hover);
   transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(99, 102, 241, 0.32);
 }
 .auth-submit-btn:disabled {
   opacity: 0.6;

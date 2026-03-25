@@ -94,13 +94,15 @@ export default function ActivityTable({ tasks }: ActivityTableProps) {
   todayEnd.setHours(23, 59, 59, 999);
 
   return (
-    <div className="premium-glass table-panel">
-      <div className="panel-head">
-        <h3>Activity Feed</h3>
-        <p>Overdue and due-today tasks are prioritized automatically</p>
+    <div className="saas-glass saas-table-card">
+      <div className="saas-card-head">
+        <div>
+          <h3 className="saas-card-title">Activity Feed</h3>
+          <p className="saas-card-sub">Overdue and due-today tasks are prioritized automatically</p>
+        </div>
       </div>
-      <div className="table-wrap">
-        <table className="activity-table">
+      <div className="saas-table-wrap">
+        <table className="saas-table">
           <thead>
             <tr>
               <th>Task</th>
@@ -123,17 +125,30 @@ export default function ActivityTable({ tasks }: ActivityTableProps) {
                 <td className="muted">{task.assignedTo?.name || task.team?.name || "Unassigned"}</td>
                 <td className="muted">
                   {task.dueDate ? formatDate(task.dueDate) : "No deadline"}
-                  {overdue && <span className="deadline-chip overdue"> Overdue</span>}
-                  {!overdue && dueToday && <span className="deadline-chip today"> Due today</span>}
+                  {overdue && <span className="saas-chip danger" style={{ marginLeft: "0.4rem" }}>Overdue</span>}
+                  {!overdue && dueToday && <span className="saas-chip warning" style={{ marginLeft: "0.4rem" }}>Due today</span>}
                 </td>
                 <td>
-                  <span className={`status-chip ${task.status}`}>{statusLabel(task.status)}</span>
+                  <span
+                    className={cn(
+                      "saas-chip",
+                      task.status === "completed"
+                        ? "success"
+                        : task.status === "in-progress"
+                          ? "primary"
+                          : task.status === "blocked"
+                            ? "warning"
+                            : "muted"
+                    )}
+                  >
+                    {statusLabel(task.status)}
+                  </span>
                 </td>
               </tr>
             )})}
           </tbody>
         </table>
-        {visibleTasks.length === 0 && <p className="empty-label">No task activity yet.</p>}
+        {visibleTasks.length === 0 && <p className="saas-empty">No task activity yet.</p>}
       </div>
     </div>
   );

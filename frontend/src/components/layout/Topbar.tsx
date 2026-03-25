@@ -22,12 +22,13 @@ export default function Topbar({ title }: Props) {
 
   return (
     <header className="topbar-container">
-      <h1 className="topbar-title">{title}</h1>
+      <h1 className="topbar-title topbar-title-hidden">{title}</h1>
 
       <div className="topbar-actions">
         <div className="topbar-search">
           <Search size={14} className="topbar-search-icon" />
-          <input type="text" placeholder="Search analytics, tasks, members..." aria-label="Search dashboard" />
+          <input type="text" placeholder="Search tasks, members..." aria-label="Search dashboard" />
+          <span className="topbar-search-kbd">⌘K</span>
         </div>
 
         <button onClick={toggleTheme} className="btn-icon">
@@ -37,7 +38,7 @@ export default function Topbar({ title }: Props) {
         <NotificationCenter />
 
         {user && (
-          <Link href="/dashboard/profile" className="topbar-avatar-link">
+          <Link href="/dashboard/settings" className="topbar-avatar-link">
             <div className="topbar-avatar">
               {avatarUrl ? (
                 <img

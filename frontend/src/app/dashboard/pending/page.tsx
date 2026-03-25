@@ -1,11 +1,11 @@
 "use client";
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Clock3, Pin, PinOff, Search, User, Users } from "lucide-react";
+import { AlertTriangle, Pin, PinOff, Search, User, Users } from "lucide-react";
 import { Task } from "@/lib/types";
-import { cn, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { useTaskStore } from "@/store/taskStore";
-import "./pending.css";
 
 const PENDING_PIN_STORAGE_KEY = "taskpholio_pending_pins";
 
@@ -142,124 +142,113 @@ export default function PendingTasksPage() {
   };
 
   return (
-    <div className="pending-shell">
-      <div className="pending-header">
-        <div>
-          <p className="pending-eyebrow">Execution Risk Desk</p>
-          <h1>Pending Tasks</h1>
-          <p>Track unfinished work, spotlight overdue deadlines, and follow owner accountability.</p>
-        </div>
-      </div>
+    <div className="saas-page">
+      <section className="saas-glass saas-pending-hero">
+        <p className="saas-heading-eyebrow">Execution Risk Desk</p>
+        <h1 className="saas-heading-title" style={{ fontSize: "2rem" }}>Pending Tasks</h1>
+        <p className="saas-heading-subtitle">
+          Track <strong>unfinished</strong> work, spotlight <span className="saas-overdue">overdue</span> deadlines, and follow owner accountability.
+        </p>
+      </section>
 
-      <div className="pending-stats-grid">
-        <div className="pending-stat-card">
-          <span>Open Tasks</span>
-          <strong>{pendingTasks.length}</strong>
-        </div>
-        <div className="pending-stat-card warning">
-          <span>Overdue</span>
-          <strong>{overdueCount}</strong>
-        </div>
-        <div className="pending-stat-card neutral">
-          <span>Due Today</span>
-          <strong>{dueTodayCount}</strong>
-        </div>
-      </div>
+      <section className="saas-pending-stats">
+        <article className="saas-glass saas-stat-card">
+          <p className="saas-stat-label">Open Tasks</p>
+          <p className="saas-stat-value">{pendingTasks.length}</p>
+        </article>
+        <article className="saas-glass saas-stat-card">
+          <p className="saas-stat-label">Overdue</p>
+          <p className="saas-stat-value warning">{overdueCount}</p>
+        </article>
+        <article className="saas-glass saas-stat-card">
+          <p className="saas-stat-label">Due Today</p>
+          <p className="saas-stat-value today">{dueTodayCount}</p>
+        </article>
+      </section>
 
-      <div className="pending-search-wrap">
-        <Search size={16} />
-        <input
-          type="text"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search task, owner, type..."
-        />
-      </div>
+      <section className="saas-search-row">
+        <label className="saas-inline-input" style={{ width: "min(100%, 430px)" }}>
+          <Search size={14} />
+          <input
+            type="text"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search task, owner, type..."
+          />
+        </label>
+      </section>
 
-      <div className="pending-table-wrap">
-        <table className="pending-table">
-          <thead>
-            <tr>
-              <th>Task</th>
-              <th>Owner</th>
-              <th>Type</th>
-              <th>Deadline</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visibleTasks.map((task) => {
-              const overdue = isTaskOverdue(task, todayStart);
-              const dueToday = isTaskDueToday(task, todayStart, todayEnd);
-              const pinned = pinnedSet.has(task._id);
+      <section className="saas-glass saas-table-card">
+        <div className="saas-table-wrap">
+          <table className="saas-table">
+            <thead>
+              <tr>
+                <th>Task</th>
+                <th>Owner</th>
+                <th>Type</th>
+                <th>Deadline</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleTasks.map((task) => {
+                const overdue = isTaskOverdue(task, todayStart);
+                const dueToday = isTaskDueToday(task, todayStart, todayEnd);
+                const pinned = pinnedSet.has(task._id);
 
-              return (
-                <tr
-                  key={task._id}
-                  className={cn(
-                    overdue ? "pending-row-overdue" : "",
-                    dueToday ? "pending-row-today" : ""
-                  )}
-                >
-                  <td>
-                    <p className="pending-task-title">{task.title}</p>
-                    {task.description && <p className="pending-task-desc">{task.description}</p>}
-                  </td>
-                  <td>
-                    <div className="pending-owner">
-                      {task.assignmentType === "team" ? <Users size={13} /> : <User size={13} />}
-                      <span>{task.assignedTo?.name || task.team?.name || "Unassigned"}</span>
-                    </div>
-                  </td>
-                  <td className="pending-muted">
-                    {task.assignmentType === "team"
-                      ? "Team"
-                      : task.assignmentType === "hybrid"
-                        ? "Team + Member"
-                        : "Individual"}
-                  </td>
-                  <td className="pending-muted">
-                    {task.dueDate ? formatDate(task.dueDate) : "No deadline"}
-                    {overdue && (
-                      <span className="pending-deadline-chip overdue">
-                        <AlertTriangle size={11} /> Overdue
+                return (
+                  <tr key={task._id}>
+                    <td>
+                      <p style={{ fontWeight: 700 }}>{task.title}</p>
+                      {task.description && (
+                        <p className="muted" style={{ marginTop: "0.18rem", fontSize: "0.72rem" }}>
+                          {task.description}
+                        </p>
+                      )}
+                    </td>
+                    <td>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
+                        {task.assignmentType === "team" ? <Users size={12} /> : <User size={12} />}
+                        <span>{task.assignedTo?.name || task.team?.name || "Unassigned"}</span>
+                      </div>
+                    </td>
+                    <td className="muted">
+                      {task.assignmentType === "team"
+                        ? "Team"
+                        : task.assignmentType === "hybrid"
+                          ? "Team + Member"
+                          : "Individual"}
+                    </td>
+                    <td className="muted">
+                      {task.dueDate ? formatDate(task.dueDate) : "No deadline"}
+                      {overdue && <span className="saas-chip danger" style={{ marginLeft: "0.42rem" }}>Overdue</span>}
+                      {!overdue && dueToday && <span className="saas-chip warning" style={{ marginLeft: "0.42rem" }}>Due Today</span>}
+                    </td>
+                    <td>
+                      <span className={`saas-chip ${task.status === "in-progress" ? "primary" : task.status === "blocked" ? "warning" : "muted"}`}>
+                        {statusLabel(task.status)}
                       </span>
-                    )}
-                    {!overdue && dueToday && (
-                      <span className="pending-deadline-chip today">
-                        <Clock3 size={11} /> Due Today
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <span className={`status-chip ${task.status}`}>{statusLabel(task.status)}</span>
-                  </td>
-                  <td>
-                    <div className="pending-actions">
-                      <button
-                        type="button"
-                        onClick={() => togglePin(task._id)}
-                        className={cn("pending-pin-btn", pinned ? "pinned" : "")}
-                      >
-                        {pinned ? <PinOff size={13} /> : <Pin size={13} />}
-                        {pinned ? "Unpin" : "Pin"}
-                      </button>
-                      <Link href={`/dashboard/tasks/${task._id}`} className="pending-open-link">
-                        Open
-                      </Link>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {visibleTasks.length === 0 && (
-          <p className="pending-empty">No pending tasks found for this filter.</p>
-        )}
-      </div>
+                    </td>
+                    <td>
+                      <div className="saas-pill-row">
+                        <button type="button" className="saas-btn-secondary" onClick={() => togglePin(task._id)}>
+                          {pinned ? <PinOff size={13} /> : <Pin size={13} />}
+                          {pinned ? "Unpin" : "Pin"}
+                        </button>
+                        <Link href={`/dashboard/tasks/${task._id}`} className="saas-btn-secondary">
+                          Open
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {visibleTasks.length === 0 && <p className="saas-empty">No pending tasks found for this filter.</p>}
+      </section>
     </div>
   );
 }
-

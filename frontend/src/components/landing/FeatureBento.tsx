@@ -1,31 +1,31 @@
 "use client";
 import React from "react";
 import { motion } from "framer-motion";
-import { Users, Zap, ShieldAlert, Rocket, Terminal, Layers } from "lucide-react";
+import { Users, BarChart3, CheckSquare, CalendarDays, Bell } from "lucide-react";
 
 const features = [
   {
-    title: "Tactical Squads",
-    description: "Assemble dynamic operative units and command them with fine-grained access tokens.",
-    icon: <Users className="w-6 h-6 text-primary" />,
+    title: "Team Command",
+    description: "Organize Technical, Social Media, and Cybersecurity teams with clear ownership.",
+    icon: <Users className="w-6 h-6 text-indigo-300" />,
     className: "md:col-span-2",
   },
   {
-    title: "Real-time Intel",
-    description: "Supabase WebSockets stream live updates directly to your command console.",
-    icon: <Zap className="w-6 h-6 text-emerald-400" />,
+    title: "Analytics",
+    description: "Visualize delivery performance and completion trends across teams.",
+    icon: <BarChart3 className="w-6 h-6 text-indigo-300" />,
     className: "md:col-span-1",
   },
   {
-    title: "Mission Directives",
-    description: "Kanban matrix tracking operational velocity. Drag, drop, and conquer.",
-    icon: <Layers className="w-6 h-6 text-blue-400" />,
+    title: "Task Workflows",
+    description: "Track Pending, In Progress, and Completed statuses in real time.",
+    icon: <CheckSquare className="w-6 h-6 text-indigo-300" />,
     className: "md:col-span-1",
   },
   {
-    title: "Threat Monitoring",
-    description: "Continuous alerts for mission-critical anomalies and deployment readouts.",
-    icon: <ShieldAlert className="w-6 h-6 text-red-500" />,
+    title: "Meetings & Alerts",
+    description: "Plan meetings and notify everyone instantly on task and schedule updates.",
+    icon: <CalendarDays className="w-6 h-6 text-indigo-300" />,
     className: "md:col-span-2",
   },
 ];
@@ -35,10 +35,10 @@ export default function FeatureBento() {
     <div className="py-32 px-6 max-w-7xl mx-auto">
       <div className="text-center max-w-3xl mx-auto mb-20 space-y-6">
         <h2 className="text-4xl md:text-5xl font-black tracking-tight text-white">
-          Engineered for <span className="text-primary">Dominance</span>
+          Built for <span className="text-primary">Modern Operations</span>
         </h2>
         <p className="text-lg text-muted-foreground font-medium leading-relaxed">
-          The bento grid array of enterprise-grade micro-SaaS architecture. Stop managing. Start commanding.
+          A clean startup-grade UI for teams to plan, assign, and execute work with clarity.
         </p>
       </div>
 
@@ -51,13 +51,12 @@ export default function FeatureBento() {
             viewport={{ once: true, margin: "-100px" }}
             transition={{ duration: 0.5, delay: idx * 0.1 }}
             whileHover={{ y: -4, scale: 1.01 }}
-            className={`group relative overflow-hidden rounded-[2rem] glass p-8 border hover:border-primary/30 transition-all duration-300 ${feature.className}`}
+            className={`group relative overflow-hidden rounded-[2rem] glass p-8 border border-[#2a2a35] hover:border-primary/35 transition-all duration-300 ${feature.className}`}
           >
-            {/* Subtle Inner Glow on Hover */}
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
             
             <div className="relative z-10 flex flex-col h-full justify-between gap-8">
-              <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center group-hover:bg-primary/10 transition-colors">
+              <div className="w-14 h-14 rounded-2xl bg-[#1a1a24] border border-[#2a2a35] flex items-center justify-center group-hover:bg-primary/10 transition-colors">
                 {feature.icon}
               </div>
               
@@ -69,9 +68,8 @@ export default function FeatureBento() {
               </div>
             </div>
             
-            {/* Accent Corner element */}
-            <div className="absolute top-6 right-6 opacity-10 group-hover:opacity-30 group-hover:rotate-12 transition-all">
-                <Terminal className="w-24 h-24" />
+            <div className="absolute top-6 right-6 opacity-20 group-hover:opacity-35 transition-all">
+                <Bell className="w-20 h-20 text-indigo-300/30" />
             </div>
           </motion.div>
         ))}

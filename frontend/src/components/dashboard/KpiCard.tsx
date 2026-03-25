@@ -13,12 +13,14 @@ export default function KpiCard({ label, value, description, icon }: KpiCardProp
     <motion.div
       whileHover={{ y: -6 }}
       transition={{ duration: 0.25 }}
-      className="premium-glass kpi-card"
+      className="saas-glass saas-kpi-card"
     >
-      <div className="kpi-icon-wrap">{icon}</div>
-      <p className="kpi-label">{label}</p>
-      <p className="kpi-value">{value}</p>
-      <p className="kpi-description">{description}</p>
+      <div className="saas-kpi-card-head">
+        <div className="saas-kpi-icon">{icon}</div>
+        <p className="saas-kpi-label">{label}</p>
+      </div>
+      <p className="saas-kpi-value">{value}</p>
+      <p className="saas-kpi-subtext">{description}</p>
     </motion.div>
   );
 }

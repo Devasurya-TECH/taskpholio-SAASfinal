@@ -10,6 +10,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 import { usePathname } from "next/navigation";
 import "@/components/layout/layout.css";
+import "@/app/dashboard/screens.css";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Overview",

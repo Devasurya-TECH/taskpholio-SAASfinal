@@ -1,53 +1,25 @@
 "use client";
-import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Bell, Check, Trash2, MailOpen, Clock, Zap, ShieldAlert, Rocket } from "lucide-react";
-import api from "@/lib/api";
-import { Notification } from "@/lib/types";
-import { cn, formatRelativeTime } from "@/lib/utils";
-import { toast } from "sonner";
 
+import { useEffect, useMemo, useState } from "react";
+import { Bell, CheckCheck, Clock, Rocket, ShieldAlert, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { formatRelativeTime } from "@/lib/utils";
+
+type RowNotification = {
+  _id: string;
+  type: string;
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: string;
+};
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<RowNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchNotifications();
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-    let channel: any = null;
-
-    const subscribeRealtime = async () => {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userId = sessionData?.session?.user?.id;
-      if (!userId || !mounted) return;
-
-      channel = supabase
-        .channel(`notifications-page-${userId}`)
-        .on(
-          "postgres_changes",
-          { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
-          () => fetchNotifications()
-        )
-        .on(
-          "postgres_changes",
-          { event: "UPDATE", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
-          () => fetchNotifications()
-        )
-        .subscribe();
-    };
-
-    subscribeRealtime();
-
-    return () => {
-      mounted = false;
-      if (channel) supabase.removeChannel(channel);
-    };
-  }, []);
+  const unreadCount = useMemo(() => notifications.filter((item) => !item.read).length, [notifications]);
 
   const fetchNotifications = async () => {
     try {
@@ -59,137 +31,147 @@ export default function NotificationsPage() {
       }
 
       const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
+        .from("notifications")
+        .select("*")
         .eq("user_id", userId)
-        .order('created_at', { ascending: false });
+        .order("created_at", { ascending: false });
       if (error) throw error;
-      
-      const mapped = (data || []).map(n => ({
-        _id: n.id,
-        type: n.type,
-        title: n.title,
-        message: n.body,
-        read: n.read,
-        createdAt: n.created_at
-      }));
-      setNotifications(mapped);
-    } catch (err) {
-      toast.error("Failed to intercept system alerts");
+
+      setNotifications(
+        (data || []).map((row: any) => ({
+          _id: row.id,
+          type: row.type,
+          title: row.title,
+          message: row.body,
+          read: row.read,
+          createdAt: row.created_at,
+        }))
+      );
+    } catch {
+      toast.error("Failed to load notifications");
     } finally {
       setLoading(false);
     }
   };
 
-  const markAsRead = async (id: string) => {
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    let channel: any = null;
+
+    const subscribe = async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id;
+      if (!mounted || !userId) return;
+
+      channel = supabase
+        .channel(`notifications-page-${userId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
+          () => fetchNotifications()
+        )
+        .subscribe();
+    };
+
+    subscribe();
+
+    return () => {
+      mounted = false;
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const markAllRead = async () => {
     try {
-      const { error } = await supabase.from('notifications').update({ read: true }).eq('id', id);
-      if (error) throw error;
-      setNotifications(prev => prev.map(n => n._id === id ? { ...n, read: true } : n));
-    } catch (err) {
-      toast.error("Protocol update failed");
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id;
+      if (!userId) return;
+      await supabase.from("notifications").update({ read: true }).eq("user_id", userId).eq("read", false);
+      setNotifications((previous) => previous.map((item) => ({ ...item, read: true })));
+    } catch {
+      toast.error("Unable to mark notifications as read");
     }
   };
 
   const clearAll = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        await supabase.from('notifications').delete().eq('user_id', session.user.id);
-      }
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id;
+      if (!userId) return;
+      await supabase.from("notifications").delete().eq("user_id", userId);
       setNotifications([]);
-      toast.success("Intelligence cleared");
-    } catch (err) {
-      toast.error("Wipe operation failed");
+      toast.success("Notifications cleared");
+    } catch {
+      toast.error("Unable to clear notifications");
     }
   };
 
   const getIcon = (type: string) => {
     const kind = (type || "").toUpperCase();
-    switch (kind) {
-      case "TASK_ASSIGNED": return <Rocket className="w-4 h-4 text-blue-400" />;
-      case "TASK_UPDATED": return <Clock className="w-4 h-4 text-amber-400" />;
-      case "COMMENT_ADDED": return <Zap className="w-4 h-4 text-yellow-400" />;
-      case "SUBTASK_UPDATED": return <Check className="w-4 h-4 text-emerald-400" />;
-      case "MEETING_READY": return <Clock className="w-4 h-4 text-purple-400" />;
-      case "MEETING_SCHEDULED": return <Clock className="w-4 h-4 text-purple-400" />;
-      case "MEMBER_ADDED": return <ShieldAlert className="w-4 h-4 text-emerald-400" />;
-      default: return <ShieldAlert className="w-4 h-4 text-primary" />;
-    }
+    if (kind.includes("MEETING")) return <Clock size={14} style={{ color: "#34d399" }} />;
+    if (kind.includes("TASK_ASSIGNED")) return <Rocket size={14} style={{ color: "#8b95ff" }} />;
+    if (kind.includes("TASK_UPDATED")) return <ShieldAlert size={14} style={{ color: "#fbbf24" }} />;
+    return <Bell size={14} style={{ color: "#8b95ff" }} />;
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-20">
-      <div className="flex items-center justify-between">
+    <div className="saas-page" style={{ maxWidth: "1100px" }}>
+      <header className="saas-header">
         <div>
-          <h1 className="text-3xl font-black text-foreground tracking-tight">Intelligence Feed</h1>
-          <p className="text-muted-foreground font-medium uppercase tracking-widest text-[10px] mt-1">Real-time System Updates & Notifications</p>
+          <p className="saas-heading-eyebrow">Real-Time Updates</p>
+          <h1 className="saas-heading-title">Notifications</h1>
+          <p className="saas-heading-subtitle">{unreadCount} unread notifications</p>
         </div>
-        <div className="flex gap-4">
-           {notifications.length > 0 && (
-             <button 
-              onClick={clearAll}
-              className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors py-2 px-4 rounded-xl border border-border/50 bg-secondary/30"
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Wipe Intel
-            </button>
-           )}
-        </div>
-      </div>
 
-      <div className="space-y-4">
+        <div className="saas-notification-actions">
+          <button type="button" className="saas-btn-secondary" onClick={markAllRead}>
+            <CheckCheck size={14} /> Mark all read
+          </button>
+          <button type="button" className="saas-btn-secondary" onClick={clearAll}>
+            <Trash2 size={14} /> Clear all
+          </button>
+        </div>
+      </header>
+
+      <section>
         {loading ? (
-          [...Array(4)].map((_, i) => <div key={i} className="h-24 bg-secondary/30 animate-pulse rounded-3xl" />)
+          <div className="saas-empty">Loading notifications...</div>
         ) : notifications.length === 0 ? (
-          <div className="glass rounded-[2.5rem] p-20 text-center border-dashed">
-            <Bell className="w-16 h-16 text-muted-foreground mx-auto mb-6 opacity-10" />
-            <p className="text-muted-foreground font-black uppercase tracking-[0.2em] text-xs">No active intelligence detected</p>
-          </div>
+          <div className="saas-empty">No notifications yet.</div>
         ) : (
-          <AnimatePresence>
-            {notifications.map((n, idx) => (
-              <motion.div 
-                key={n._id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ delay: idx * 0.05 }}
-                className={cn(
-                  "glass rounded-3xl p-6 flex items-start gap-6 group hover:border-primary/20 transition-all shadow-xl shadow-black/5",
-                  !n.read ? "bg-primary/[0.03] border-primary/20" : "opacity-70"
-                )}
-              >
-                <div className={cn(
-                  "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border border-border group-hover:bg-secondary/50 transition-all",
-                  !n.read ? "bg-primary/10 border-primary/20" : "bg-secondary/30"
-                )}>
-                  {getIcon(n.type)}
+          notifications.map((notification) => (
+            <article key={notification._id} className="saas-glass saas-notification-item">
+              <div className="saas-notification-left">
+                <div className="saas-notification-icon">{getIcon(notification.type)}</div>
+                <div style={{ minWidth: 0 }}>
+                  <p className="saas-notification-title" style={{ opacity: notification.read ? 0.7 : 1 }}>
+                    {notification.title}
+                  </p>
+                  <p className="saas-notification-message">{notification.message}</p>
                 </div>
-                
-                <div className="flex-1 min-w-0 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-black text-foreground truncate uppercase text-sm tracking-tight">{n.title}</h4>
-                    <span className="text-[10px] font-black text-muted-foreground uppercase">{formatRelativeTime(n.createdAt)}</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{n.message}</p>
-                </div>
+              </div>
 
-                <div className="flex flex-col gap-2">
-                   {!n.read && (
-                     <button 
-                      onClick={() => markAsRead(n._id)}
-                      className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/10 hover:bg-primary transition-all hover:text-white"
-                      title="Mark as Read"
-                     >
-                       <MailOpen className="w-4 h-4" />
-                     </button>
-                   )}
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
+                <span className="saas-notification-time">{formatRelativeTime(notification.createdAt)}</span>
+                {!notification.read && (
+                  <span
+                    style={{
+                      width: "0.34rem",
+                      height: "0.34rem",
+                      borderRadius: "999px",
+                      background: "#8b95ff",
+                    }}
+                  />
+                )}
+              </div>
+            </article>
+          ))
         )}
-      </div>
+      </section>
     </div>
   );
 }

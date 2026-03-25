@@ -54,7 +54,7 @@ export default function Sidebar() {
 
   return (
     <motion.aside
-      animate={{ width: sidebarOpen && !isCompact ? 240 : 72 }}
+      animate={{ width: sidebarOpen && !isCompact ? 248 : 72 }}
       transition={{ duration: 0.2, ease: "easeInOut" }}
       className="sidebar-container"
     >
