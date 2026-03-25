@@ -1,8 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Users, ChevronRight, ShieldCheck, Zap, Target, MoreHorizontal, UserPlus, Search } from "lucide-react";
-import api from "@/lib/api";
+import { motion } from "framer-motion";
+import { Users, ShieldCheck, Zap, Target, MoreHorizontal, UserPlus, Search } from "lucide-react";
 import { Team, User } from "@/lib/types";
 import { cn, getDisplayName, getInitial, getRoleColor } from "@/lib/utils";
 import { toast } from "sonner";
@@ -56,7 +55,7 @@ const UserBadge = ({ user, size = "md" }: { user: User | null; size?: "sm" | "md
 
 export default function TeamsPage() {
   const [hierarchy, setHierarchy] = useState<Hierarchy | null>(null);
-  const { teams, fetchTeams, createTeam, isLoading: teamsLoading } = useAdminStore();
+  const { teams, fetchTeams, isLoading: teamsLoading } = useAdminStore();
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [isAssembleModalOpen, setIsAssembleModalOpen] = useState(false);
@@ -262,6 +261,62 @@ export default function TeamsPage() {
           ))}
         </div>
         )}
+      </section>
+
+      {/* Team Session */}
+      <section className="space-y-6">
+        <div className="flex items-center gap-3">
+          <Users className="w-5 h-5 text-primary" />
+          <h2 className="text-sm font-black uppercase tracking-[0.2em] text-muted-foreground">Team Session</h2>
+        </div>
+
+        <div className="glass rounded-[2rem] p-6 md:p-8 space-y-5">
+          {filteredTeams.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border/60 bg-secondary/20 px-5 py-8 text-center">
+              <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">No Teams Available</p>
+              <p className="mt-2 text-sm text-muted-foreground">Create a team to see member roster here.</p>
+            </div>
+          ) : (
+            filteredTeams.map((team) => (
+              <div key={`team-session-${team._id}`} className="rounded-2xl border border-border/50 bg-secondary/20 p-4 md:p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-black text-foreground">{team.name}</h3>
+                    <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                      {team.members.length} members | Lead: {getDisplayName(team.lead?.name, team.lead?.email)}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-black px-3 py-1 rounded-full border border-primary/30 bg-primary/10 text-primary uppercase tracking-widest">
+                    Active Team
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {team.members.length > 0 ? (
+                    team.members.map((member) => (
+                      <div
+                        key={`${team._id}-${member._id}`}
+                        className="flex items-center gap-3 rounded-xl border border-border/50 bg-background/40 px-3 py-2.5"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-xs font-black text-primary">
+                          {getInitial(member.name, member.email)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-foreground truncate">{getDisplayName(member.name, member.email)}</p>
+                          <p className="text-[10px] uppercase tracking-widest text-muted-foreground">{member.role || "Member"}</p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="col-span-full rounded-xl border border-dashed border-border/60 px-4 py-5 text-xs text-muted-foreground">
+                      No members assigned to this team yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </section>
 
       <AssembleSquadModal 
