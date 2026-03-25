@@ -2,17 +2,24 @@
 import { useState, useEffect } from "react";
 import { 
   Bell, Check, Trash2, X, AlertCircle, 
-  Play, ShieldCheck, CheckCircle2, MessageSquare, Tag,
+  Play, ShieldCheck, CheckCircle2, MessageSquare,
   Calendar
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNotificationStore } from "@/store/notificationStore";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
-import Link from "next/link";
+import { registerPushSubscription } from "@/lib/pushSubscription";
+import { useRouter } from "next/navigation";
 
 export default function NotificationCenter() {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
+    typeof window !== "undefined" && "Notification" in window ? Notification.permission : "default"
+  );
+  const [requestingPermission, setRequestingPermission] = useState(false);
   const { 
     notifications, unreadCount, fetchNotifications, 
     markAsRead, markAllAsRead, deleteNotification 
@@ -20,7 +27,39 @@ export default function NotificationCenter() {
 
   useEffect(() => {
     fetchNotifications();
+  }, [fetchNotifications]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sync = () => {
+      setIsMobile(window.innerWidth <= 1024);
+      if ("Notification" in window) {
+        setNotificationPermission(Notification.permission);
+      }
+    };
+
+    sync();
+    window.addEventListener("resize", sync);
+    window.addEventListener("focus", sync);
+    document.addEventListener("visibilitychange", sync);
+
+    return () => {
+      window.removeEventListener("resize", sync);
+      window.removeEventListener("focus", sync);
+      document.removeEventListener("visibilitychange", sync);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    if (!isOpen) return;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen, isMobile]);
 
   const getIcon = (type: string) => {
     const kind = (type || "").toUpperCase();
@@ -33,6 +72,36 @@ export default function NotificationCenter() {
       case 'MEETING_READY': return <AlertCircle className="w-4 h-4 text-red-400" />;
       case 'MEETING_SCHEDULED': return <Calendar className="w-4 h-4 text-purple-400" />;
       default: return <Bell className="w-4 h-4 text-muted-foreground" />;
+    }
+  };
+
+  const resolveNotificationHref = (notif: any): string => {
+    const type = String(notif?.type || "").toUpperCase();
+    const refId = notif?.link;
+
+    if (type.includes("MEETING")) {
+      return "/dashboard/meetings";
+    }
+    if (refId) {
+      return `/dashboard/tasks/${refId}`;
+    }
+    return "/dashboard/notifications";
+  };
+
+  const handleEnableAlerts = async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (notificationPermission === "denied") return;
+
+    setRequestingPermission(true);
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+
+      if (permission === "granted") {
+        await registerPushSubscription();
+      }
+    } finally {
+      setRequestingPermission(false);
     }
   };
 
@@ -60,16 +129,29 @@ export default function NotificationCenter() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsOpen(false)}
-              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+              className="fixed inset-0 z-40 bg-black/45 backdrop-blur-sm"
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="absolute right-0 mt-3 w-96 glass rounded-3xl border border-white/10 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] z-50 overflow-hidden flex flex-col"
+              className={cn(
+                "glass rounded-3xl border border-white/10 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] z-50 overflow-hidden flex flex-col",
+                isMobile ? "fixed" : "absolute right-0 mt-3 w-96"
+              )}
+              style={
+                isMobile
+                  ? {
+                      left: "0.75rem",
+                      right: "0.75rem",
+                      top: "calc(env(safe-area-inset-top) + 4.2rem)",
+                      maxHeight: "calc(100vh - 8.6rem)",
+                    }
+                  : undefined
+              }
             >
               {/* Header */}
-              <div className="p-6 border-b border-white/5 bg-white/5">
+              <div className="p-5 border-b border-white/5 bg-white/5">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="text-lg font-black text-foreground tracking-tight">Intelligence Feed</h3>
@@ -85,6 +167,19 @@ export default function NotificationCenter() {
                     className="text-[10px] font-black text-primary uppercase tracking-[0.2em] hover:text-primary/80 transition-colors"
                   >
                     Acknowledge All Updates
+                  </button>
+                )}
+                {notificationPermission !== "granted" && (
+                  <button
+                    onClick={handleEnableAlerts}
+                    disabled={requestingPermission || notificationPermission === "denied"}
+                    className="ml-3 text-[10px] font-black text-blue-300 uppercase tracking-[0.2em] hover:text-blue-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {notificationPermission === "denied"
+                      ? "Alerts Blocked"
+                      : requestingPermission
+                        ? "Enabling..."
+                        : "Enable Alerts"}
                   </button>
                 )}
               </div>
@@ -105,9 +200,26 @@ export default function NotificationCenter() {
                       <div
                         key={notif._id}
                         className={cn(
-                          "p-6 transition-all hover:bg-white/5 group relative cursor-pointer",
+                          "w-full text-left p-5 transition-all hover:bg-white/5 group relative cursor-pointer",
                           !notif.read && "bg-primary/5 shadow-inner shadow-primary/5"
                         )}
+                        onClick={() => {
+                          const href = resolveNotificationHref(notif);
+                          setIsOpen(false);
+                          if (!notif.read) markAsRead(notif._id);
+                          router.push(href);
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            const href = resolveNotificationHref(notif);
+                            setIsOpen(false);
+                            if (!notif.read) markAsRead(notif._id);
+                            router.push(href);
+                          }
+                        }}
                       >
                         <div className="flex gap-4">
                           <div className={cn(
@@ -116,7 +228,7 @@ export default function NotificationCenter() {
                           )}>
                             {getIcon(notif.type)}
                           </div>
-                          <div className="flex-1 min-w-0" onClick={() => notif.link && setIsOpen(false)}>
+                          <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-2 mb-1">
                               <h5 className="text-sm font-black text-foreground line-clamp-1">{notif.title}</h5>
                               {!notif.read && <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />}
@@ -131,6 +243,7 @@ export default function NotificationCenter() {
                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                     {!notif.read && (
                                         <button 
+                                            type="button"
                                             onClick={(e) => { e.stopPropagation(); markAsRead(notif._id); }}
                                             className="p-1.5 rounded-lg hover:bg-emerald-500/20 text-emerald-400 transition-all"
                                             title="Acknowledge"
@@ -139,6 +252,7 @@ export default function NotificationCenter() {
                                         </button>
                                     )}
                                     <button 
+                                        type="button"
                                         onClick={(e) => { e.stopPropagation(); deleteNotification(notif._id); }}
                                         className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-500 transition-all"
                                         title="Purge"

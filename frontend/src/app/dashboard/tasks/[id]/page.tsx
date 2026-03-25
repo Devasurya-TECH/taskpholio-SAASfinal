@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
-import { cn, getPriorityColor, getStatusColor, formatDate, formatRelativeTime, getDisplayName, getInitial, isMemberRole } from "@/lib/utils";
+import { cn, getPriorityColor, getStatusColor, formatDate, formatRelativeTime, getDisplayName, getInitial } from "@/lib/utils";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { sendPushToUsers } from "@/lib/pushNotifications";
@@ -29,7 +29,6 @@ export default function TaskDetailPage() {
   const [completionSubmitting, setCompletionSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<"details" | "subtasks" | "activity">("details");
   const completionFileInputRef = useRef<HTMLInputElement>(null);
-  const isMember = isMemberRole(me?.role);
 
   useEffect(() => {
     if (params.id) fetchTask(params.id as string);
@@ -219,6 +218,13 @@ export default function TaskDetailPage() {
   }
 
   const isTeamTask = Boolean(task.teamId && !task.assignedToId);
+  const currentUserTeamId =
+    typeof me?.team === "string"
+      ? me.team
+      : (me?.team as { _id?: string } | null | undefined)?._id || null;
+  const isDirectAssignee = Boolean(task.assignedToId && me?._id && task.assignedToId === me._id);
+  const isTeamAssignee = Boolean(isTeamTask && currentUserTeamId && task.teamId === currentUserTeamId);
+  const canUpdateProgress = Boolean(me?._id && (isDirectAssignee || isTeamAssignee));
   const myTeamProgressStatus =
     isTeamTask && me?._id
       ? task.teamProgress?.find((entry) => entry.userId === me._id)?.status || "pending"
@@ -271,11 +277,11 @@ export default function TaskDetailPage() {
             </div>
           </motion.div>
 
-          {isMember && (
+          {canUpdateProgress && (
             <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-6 border border-primary/10">
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="space-y-2">
-                  <p className="text-xs font-black uppercase tracking-widest text-primary">Member Progress Update</p>
+                  <p className="text-xs font-black uppercase tracking-widest text-primary">Task Progress Update</p>
                   <h3 className="text-lg font-black text-foreground">Inform CEO / CTO about your task progress</h3>
                   <p className="text-sm text-muted-foreground">
                     Tap the current stage below so leadership gets the realtime update instantly.
@@ -435,7 +441,7 @@ export default function TaskDetailPage() {
 
               {activeTab === "details" && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
-                  {isMember && myTeamProgressStatus === "completed" && (
+                  {canUpdateProgress && myTeamProgressStatus === "completed" && (
                     <div className="glass rounded-2xl p-6">
                       <h3 className="text-lg font-black mb-2">Completion Proof</h3>
                       <p className="text-xs text-muted-foreground mb-5">
@@ -630,7 +636,7 @@ export default function TaskDetailPage() {
               </div>
             </div>
 
-            {isMember && (
+            {canUpdateProgress && (
               <div className="space-y-2 pt-4 border-t border-border/50">
                 <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Progress Sync</p>
                 <p className="text-sm text-foreground font-bold">{statusToStepLabel(myTeamProgressStatus)}</p>
@@ -640,7 +646,7 @@ export default function TaskDetailPage() {
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Members can update progress from the main task panel.
+                  Assigned users can update progress from the main task panel.
                 </p>
               </div>
             )}

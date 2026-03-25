@@ -13,15 +13,13 @@ interface UIState {
 const THEME_STORAGE_KEY = "taskpholio_theme";
 
 const resolveStoredTheme = (): "dark" | "light" => {
-  if (typeof window === "undefined") return "dark";
-  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return stored === "light" ? "light" : "dark";
+  return "dark";
 };
 
 const applyTheme = (theme: "dark" | "light") => {
   if (typeof document === "undefined") return;
-  document.documentElement.setAttribute("data-theme", theme);
-  document.documentElement.classList.toggle("dark", theme === "dark");
+  document.documentElement.setAttribute("data-theme", "dark");
+  document.documentElement.classList.add("dark");
 };
 
 export const useUIStore = create<UIState>()((set) => ({
@@ -30,17 +28,18 @@ export const useUIStore = create<UIState>()((set) => ({
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setSidebar: (open) => set({ sidebarOpen: open }),
   initTheme: () => {
-    const resolved = resolveStoredTheme();
-    applyTheme(resolved);
-    set({ theme: resolved });
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(THEME_STORAGE_KEY, "dark");
+    }
+    applyTheme("dark");
+    set({ theme: "dark" });
   },
   toggleTheme: () =>
-    set((state) => {
-      const newTheme = state.theme === "dark" ? "light" : "dark";
+    set(() => {
       if (typeof window !== "undefined") {
-        window.localStorage.setItem(THEME_STORAGE_KEY, newTheme);
+        window.localStorage.setItem(THEME_STORAGE_KEY, "dark");
       }
-      applyTheme(newTheme);
-      return { theme: newTheme };
+      applyTheme("dark");
+      return { theme: "dark" };
     }),
 }));

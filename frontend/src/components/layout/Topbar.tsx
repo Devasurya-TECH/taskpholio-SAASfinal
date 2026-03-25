@@ -1,7 +1,6 @@
 "use client";
 import React, { useState } from "react";
-import { Moon, Sun, Search } from "lucide-react";
-import { useUIStore } from "@/store/uiStore";
+import { Search } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -16,7 +15,6 @@ interface Props {
 
 export default function Topbar({ title }: Props) {
   const { user } = useAuthStore();
-  const { theme, toggleTheme } = useUIStore();
   const pathname = usePathname();
   const [failedAvatarUrls, setFailedAvatarUrls] = useState<Record<string, true>>({});
 
@@ -49,10 +47,6 @@ export default function Topbar({ title }: Props) {
         </div>
 
         <PWAInstallPrompt />
-
-        <button onClick={toggleTheme} className="btn-icon">
-          {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-        </button>
 
         <NotificationCenter />
 

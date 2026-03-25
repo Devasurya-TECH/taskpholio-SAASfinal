@@ -27,7 +27,7 @@ const pageTitles: Record<string, string> = {
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, fetchMe, token } = useAuthStore();
+  const { isAuthenticated, fetchMe, token, user } = useAuthStore();
   const { initTheme } = useUIStore();
   const router = useRouter();
   const pathname = usePathname();
@@ -83,19 +83,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // Supabase Realtime Subscriptions
   useEffect(() => {
-    if (!isAuthenticated) return;
-    
+    if (!isAuthenticated || !user?._id) return;
+
     // Initialize real-time listeners for updates
     initRealtimeTasks();
-    
-    // Initialize notification real-time listener if we have the user
-    const subUser = useAuthStore.getState().user;
-    if (subUser?._id) {
-      initRealtime(subUser._id);
-    }
-    
-    // Cleanup subscriptions automatically handled or we can just leave them
-  }, [isAuthenticated, initRealtimeTasks, initRealtime]);
+
+    // Initialize notification real-time listener for authenticated user
+    initRealtime(user._id);
+  }, [isAuthenticated, user?._id, initRealtimeTasks, initRealtime]);
 
   if (!isMounted) return null; // Prevent hydration flash
 
