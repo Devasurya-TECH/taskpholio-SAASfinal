@@ -151,6 +151,9 @@ export default function RegisterPage() {
               Sign In
             </Link>
           </p>
+          <p className="auth-footer" style={{ marginTop: "0.35rem", opacity: 0.85 }}>
+            If an admin already created your account, skip registration and sign in directly.
+          </p>
         </div>
       </motion.div>
     </div>

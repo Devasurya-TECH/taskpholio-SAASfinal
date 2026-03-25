@@ -46,15 +46,44 @@ export const useAuthStore = create<AuthState>()(
           console.log(`[AUTH] Auth success, user ID: ${authUser.id}`);
           
           // Fetch the profile from the profiles table
-          const { data: profile, error: profileError } = await supabase
+          let { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', authUser.id)
             .single();
 
           if (profileError) {
-            console.error("[AUTH] Profile fetch error:", profileError.message);
-            throw profileError;
+            const noProfileFound =
+              profileError.code === "PGRST116" ||
+              profileError.message?.toLowerCase().includes("0 rows");
+
+            if (noProfileFound) {
+              const roleMeta = (authUser.user_metadata?.role || "member").toString().toLowerCase();
+              const normalizedRole = ["ceo", "cto", "member"].includes(roleMeta) ? roleMeta : "member";
+
+              const { data: repairedProfile, error: repairError } = await supabase
+                .from("profiles")
+                .upsert({
+                  id: authUser.id,
+                  full_name: getDisplayName(authUser.user_metadata?.full_name, authUser.email),
+                  email: authUser.email,
+                  role: normalizedRole,
+                  team: null,
+                  is_active: true,
+                })
+                .select("*")
+                .single();
+
+              if (repairError) {
+                console.error("[AUTH] Profile repair failed:", repairError.message);
+                throw repairError;
+              }
+
+              profile = repairedProfile;
+            } else {
+              console.error("[AUTH] Profile fetch error:", profileError.message);
+              throw profileError;
+            }
           }
 
           console.log("[AUTH] Profile fetched successfully:", profile.role);
@@ -125,6 +154,13 @@ export const useAuthStore = create<AuthState>()(
           return true;
         } catch (err: any) {
           set({ isLoading: false });
+          const message = (err?.message || "").toLowerCase();
+          if (message.includes("already registered") || message.includes("user already registered")) {
+            throw new Error("This email is already registered. Please sign in instead.");
+          }
+          if (message.includes("email not confirmed")) {
+            throw new Error("Please confirm your email before signing in.");
+          }
           throw err;
         }
       },
