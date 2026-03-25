@@ -19,9 +19,8 @@ const baseNav = [
   { href: "/dashboard/pending", label: "Pending", icon: AlertTriangle },
   { href: "/dashboard/meetings", label: "Meetings", icon: Calendar },
   { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
+  { href: "/dashboard/teams", label: "Teams", icon: Users },
 ];
-
-const teamsNav = { href: "/dashboard/teams", label: "Tactical Squads", icon: Users };
 
 const adminNav = { href: "/dashboard/admin", label: "Admin Panel", icon: ShieldCheck };
 const settingsNav = { href: "/dashboard/settings", label: "Settings", icon: Settings };
@@ -46,9 +45,10 @@ export default function Sidebar() {
     return () => window.removeEventListener("resize", syncSidebarForViewport);
   }, [setSidebar]);
 
+  const canManageAdmin = user && (user.role?.toLowerCase() === "ceo" || user.role?.toLowerCase() === "cto" || user.role?.toLowerCase() === "admin");
   const navItems = [
-    ...baseNav, 
-    ...(user && (user.role?.toLowerCase() === 'ceo' || user.role?.toLowerCase() === 'cto' || user.role?.toLowerCase() === 'admin') ? [teamsNav, adminNav] : []), 
+    ...baseNav,
+    ...(canManageAdmin ? [adminNav] : []),
     settingsNav
   ];
 

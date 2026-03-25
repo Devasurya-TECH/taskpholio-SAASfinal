@@ -1,58 +1,71 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useRef, useState } from "react";
 import { useAuthStore } from "@/store/authStore";
-import { Camera, Mail, Shield, User as UserIcon, Loader2, Briefcase, Zap, Key } from "lucide-react";
+import { Camera, Mail, Shield, User as UserIcon, Loader2, Briefcase, Zap, Key, UploadCloud } from "lucide-react";
 import { motion } from "framer-motion";
-import api from "@/lib/api";
 import { toast } from "sonner";
-import Image from "next/image";
-import { cn, getRoleColor } from "@/lib/utils";
+import { getDisplayName, getInitial, getRoleColor } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import { uploadAttachments } from "@/lib/uploadAttachments";
 
-const ProfileField = ({ icon: Icon, label, value, sub }: any) => (
+const resolveToken = (fallbackToken: string | null): string => {
+  if (fallbackToken) return fallbackToken;
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("taskpholio_token") || sessionStorage.getItem("taskpholio_token") || "";
+};
+
+const ProfileField = ({
+  icon: Icon,
+  label,
+  value,
+  sub,
+}: {
+  icon: any;
+  label: string;
+  value: string;
+  sub: string;
+}) => (
   <div className="space-y-2">
     <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
-      <Icon className="w-3 h-3" />
+      <Icon className="w-3.5 h-3.5" />
       {label}
     </label>
-    <div className="relative group">
-      <div className="absolute inset-0 bg-primary/5 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
-      <div className="relative bg-secondary/30 border border-white/5 rounded-2xl px-6 py-4 flex flex-col gap-1 transition-all group-hover:border-primary/20">
-        <p className="text-sm font-black text-foreground tracking-tight">{value}</p>
-        <p className="text-[9px] font-medium text-muted-foreground italic uppercase tracking-widest">{sub}</p>
-      </div>
+    <div className="bg-secondary/35 border border-border/60 rounded-2xl px-5 py-4 min-h-[78px] flex flex-col justify-center">
+      <p className="text-sm font-black text-foreground tracking-tight break-words">{value}</p>
+      <p className="text-[9px] font-medium text-muted-foreground uppercase tracking-widest mt-1">{sub}</p>
     </div>
   </div>
 );
 
 export default function ProfilePage() {
-  const { user, setAuth } = useAuthStore();
+  const { user, token, setAuth } = useAuthStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      return toast.error("INTEL BLOCKED: Only images are allowed.");
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      return toast.error("INTEL BLOCKED: File size must be less than 5MB.");
-    }
+    const selected = e.target.files?.[0];
+    if (!selected || !user) return;
 
     setUploading(true);
-
     try {
-      // Simulating avatar upload since Supabase Storage bucket 'avatars' is not initialized in SQL
-      await new Promise(res => setTimeout(res, 1000));
-      const simulatedAvatarUrl = "https://github.com/shadcn.png";
-      
-      const currentToken = localStorage.getItem("taskpholio_token") || "";
-      setAuth({ ...user!, avatar: simulatedAvatarUrl }, currentToken);
-      toast.success("Identity Verified: Avatar updated.");
+      const result = await uploadAttachments([selected], { imageOnly: true, maxSizeBytes: 5 * 1024 * 1024 });
+      if (result.uploaded.length === 0) {
+        throw new Error(result.failed[0]?.reason || "Image upload failed.");
+      }
+
+      const avatarUrl = result.uploaded[0].fileUrl;
+      const { error } = await supabase
+        .from("profiles")
+        .update({ avatar_url: avatarUrl })
+        .eq("id", user._id);
+
+      if (error) throw error;
+
+      setAuth({ ...user, avatar: avatarUrl }, resolveToken(token));
+      toast.success("Profile photo updated.");
     } catch (err: any) {
-      toast.error(err.message || "Tactical Failure: Failed to update identity.");
+      toast.error(err?.message || "Failed to update profile photo.");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -61,97 +74,153 @@ export default function ProfilePage() {
 
   if (!user) return null;
 
-  return (
-    <div className="max-w-5xl mx-auto space-y-12 pb-20 p-4 md:p-8">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-4xl font-black text-foreground tracking-tight uppercase">Operative Dossier</h1>
-        <p className="text-muted-foreground font-black uppercase tracking-[0.2em] text-[10px] mt-2">Personal Intelligence & Access Credentials</p>
-      </motion.div>
+  const displayName = getDisplayName(user.name, user.email);
+  const roleLabel = `${user.role} Class`;
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-        {/* Avatar Section */}
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="lg:col-span-4 flex flex-col items-center">
-          <div className="relative group">
-            <div className="absolute -inset-4 bg-primary/20 rounded-[3rem] blur-2xl opacity-0 group-hover:opacity-100 transition-opacity animate-pulse" />
-            <div className="relative w-64 h-64 rounded-[3.5rem] overflow-hidden border-8 border-secondary bg-secondary shadow-2xl transition-transform group-hover:scale-[1.02]">
+  return (
+    <div className="mx-auto max-w-6xl space-y-8 pb-20">
+      <motion.section
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass rounded-3xl border border-border/60 p-6 md:p-8"
+      >
+        <div className="flex flex-col gap-8 lg:flex-row lg:items-center">
+          <div className="relative mx-auto lg:mx-0">
+            <div className="relative h-40 w-40 overflow-hidden rounded-[2rem] border-2 border-primary/35 bg-secondary shadow-[0_0_35px_rgba(34,197,94,0.18)]">
               {user.avatar ? (
-                <Image src={user.avatar} alt={user.name} width={256} height={256} className="object-cover w-full h-full" />
+                <img src={user.avatar} alt={displayName} className="h-full w-full object-cover" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-secondary">
-                   <UserIcon className="w-24 h-24 text-primary opacity-40" />
+                <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/12 to-secondary">
+                  <span className="text-5xl font-black text-primary/75">{getInitial(user.name, user.email)}</span>
                 </div>
               )}
               {uploading && (
-                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-20">
-                  <Loader2 className="w-12 h-12 text-primary animate-spin" />
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                  <Loader2 className="h-9 w-9 animate-spin text-primary" />
                 </div>
               )}
             </div>
-            
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
+
+            <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
-              className="absolute -bottom-4 -right-4 w-16 h-16 bg-primary text-primary-foreground rounded-[2rem] flex items-center justify-center shadow-[0_0_30px_rgba(59,130,246,0.5)] z-30 group-hover:rotate-12 transition-all"
+              className="absolute -bottom-3 -right-3 inline-flex h-12 w-12 items-center justify-center rounded-xl border border-primary/30 bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-all hover:scale-105 disabled:cursor-not-allowed disabled:opacity-70"
+              aria-label="Upload profile photo"
             >
-              <Camera className="w-6 h-6" />
-            </motion.button>
-            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+              <Camera className="h-5 w-5" />
+            </button>
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept="image/*"
+              className="hidden"
+            />
           </div>
 
-          <div className="mt-12 w-full glass p-8 rounded-[2rem] border border-white/5 space-y-4">
-             <div className="flex items-center justify-between">
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">ID Status</p>
-                <div className="flex items-center gap-2">
-                   <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                   <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Active</span>
-                </div>
-             </div>
-             <p className="text-[10px] text-muted-foreground leading-relaxed italic">Biometric identity verified via secure cloud sync. Operative is cleared for tactical maneuvers.</p>
+          <div className="min-w-0 flex-1 space-y-4">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">Operative Dossier</p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight text-foreground">{displayName}</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Keep profile details aligned so assignment routing, notifications, and team visibility stay accurate.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-border/60 bg-secondary/30 px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Role</p>
+                <p className="mt-1 text-sm font-black text-foreground">{user.role}</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-secondary/30 px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Status</p>
+                <p className="mt-1 text-sm font-black text-emerald-400">Active</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-secondary/30 px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Profile Photo</p>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="mt-1 inline-flex items-center gap-2 text-xs font-bold text-primary hover:text-primary/80"
+                >
+                  <UploadCloud className="h-3.5 w-3.5" />
+                  Upload New
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border/60 bg-background/30 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Identity Verification</p>
+                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Verified</span>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Profile data is linked to task notifications, team dashboards, and assignment permissions.
+              </p>
+            </div>
           </div>
-        </motion.div>
+        </div>
+      </motion.section>
 
-        {/* Intelligence Data */}
-        <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }} className="lg:col-span-8 flex flex-col gap-8">
-           <div className="glass rounded-[3rem] p-10 border border-white/5 shadow-2xl space-y-8">
-              <div className="flex items-center gap-4 mb-4">
-                 <Shield className="w-6 h-6 text-primary" />
-                 <h3 className="text-xl font-black text-foreground uppercase tracking-tight">Identity Parameters</h3>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <ProfileField icon={UserIcon} label="Full Name" value={user.name} sub="Official Operative Designation" />
-                <ProfileField icon={Mail} label="Matrix Address" value={user.email} sub="Secure Communication Link" />
-                <ProfileField icon={Key} label="Access Tier" value={`${user.role} Class`} sub="Assigned Authorization Level" />
-                <ProfileField icon={Briefcase} label="Strategic Division" value={typeof user.team === 'object' ? user.team?.name : user.team || "Independent"} sub="Current Tactical Group" />
-              </div>
-           </div>
+      <motion.section
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05 }}
+        className="glass rounded-3xl border border-border/60 p-6 md:p-8"
+      >
+        <div className="mb-6 flex items-center gap-3">
+          <Shield className="h-5 w-5 text-primary" />
+          <h2 className="text-xl font-black text-foreground">Identity Parameters</h2>
+        </div>
 
-           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-black">
-              <div className="glass p-6 rounded-2xl border-emerald-500/10 flex items-center justify-between">
-                 <div className="space-y-1">
-                    <p className="text-[9px] uppercase tracking-widest text-muted-foreground">Reputation</p>
-                    <p className="text-xl text-emerald-400">98%</p>
-                 </div>
-                 <Zap className="w-5 h-5 text-emerald-400" />
-              </div>
-              <div className="glass p-6 rounded-2xl border-primary/10 flex items-center justify-between">
-                 <div className="space-y-1">
-                    <p className="text-[9px] uppercase tracking-widest text-muted-foreground">Operations</p>
-                    <p className="text-xl text-primary">124</p>
-                 </div>
-                 <Shield className="w-5 h-5 text-primary" />
-              </div>
-              <div className="glass p-6 rounded-2xl border-purple-500/10 flex items-center justify-between">
-                 <div className="space-y-1">
-                    <p className="text-[9px] uppercase tracking-widest text-muted-foreground">Commendations</p>
-                    <p className="text-xl text-purple-400">12</p>
-                 </div>
-                 <Key className="w-5 h-5 text-purple-400" />
-              </div>
-           </div>
-        </motion.div>
-      </div>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <ProfileField icon={UserIcon} label="Full Name" value={displayName} sub="Official Operative Designation" />
+          <ProfileField icon={Mail} label="Matrix Address" value={user.email} sub="Secure Communication Link" />
+          <ProfileField icon={Key} label="Access Tier" value={roleLabel} sub="Assigned Authorization Level" />
+          <ProfileField
+            icon={Briefcase}
+            label="Strategic Division"
+            value={typeof user.team === "object" ? user.team?.name || "Unassigned" : user.team || "Unassigned"}
+            sub="Current Tactical Group"
+          />
+        </div>
+      </motion.section>
+
+      <motion.section
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="grid grid-cols-1 gap-4 md:grid-cols-3"
+      >
+        <div className="glass rounded-2xl border border-emerald-500/20 p-5 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Reputation</p>
+            <p className="mt-1 text-xl font-black text-emerald-400">98%</p>
+          </div>
+          <Zap className="h-5 w-5 text-emerald-400" />
+        </div>
+
+        <div className="glass rounded-2xl border border-primary/20 p-5 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Role Signature</p>
+            <p className={`mt-1 inline-flex rounded-lg border px-2 py-1 text-xs font-black uppercase tracking-widest ${getRoleColor(user.role)}`}>
+              {user.role}
+            </p>
+          </div>
+          <Shield className="h-5 w-5 text-primary" />
+        </div>
+
+        <div className="glass rounded-2xl border border-blue-500/20 p-5 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Commendations</p>
+            <p className="mt-1 text-xl font-black text-blue-400">12</p>
+          </div>
+          <Key className="h-5 w-5 text-blue-400" />
+        </div>
+      </motion.section>
     </div>
   );
 }
+

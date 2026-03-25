@@ -26,8 +26,8 @@ export default function Topbar({ title }: Props) {
 
       <div className="topbar-actions">
         <div className="topbar-search">
-          <Search size={14} />
-          <input type="text" placeholder="Search analytics, tasks, members..." />
+          <Search size={14} className="topbar-search-icon" />
+          <input type="text" placeholder="Search analytics, tasks, members..." aria-label="Search dashboard" />
         </div>
 
         <button onClick={toggleTheme} className="btn-icon">

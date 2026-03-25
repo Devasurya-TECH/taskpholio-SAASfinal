@@ -8,10 +8,16 @@ if (RAW_URL && !RAW_URL.includes("/api/v1")) {
 
 const API_BASE_URL = RAW_URL.endsWith('/') ? RAW_URL : `${RAW_URL}/`;
 
+const getStoredToken = (): string | null => {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("taskpholio_token") || sessionStorage.getItem("taskpholio_token");
+};
+
 export const api = axios.create({
   baseURL: API_BASE_URL,
   headers: { "Content-Type": "application/json" },
   withCredentials: true,
+  timeout: 45000,
 });
 
 // DIAGNOSTIC REQUEST LOGGING
@@ -19,9 +25,9 @@ api.interceptors.request.use((config) => {
   const fullUrl = `${config.baseURL}${config.url}`;
   console.log(`[API REQUEST] ${config.method?.toUpperCase()} ${fullUrl}`, config.data);
   
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("taskpholio_token");
-    if (token) config.headers.Authorization = `Bearer ${token}`;
+  const token = getStoredToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
@@ -37,6 +43,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       if (typeof window !== "undefined") {
         localStorage.removeItem("taskpholio_token");
+        sessionStorage.removeItem("taskpholio_token");
         window.location.href = "/login";
       }
     }

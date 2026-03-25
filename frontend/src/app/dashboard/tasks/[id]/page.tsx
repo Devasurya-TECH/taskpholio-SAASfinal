@@ -10,9 +10,9 @@ import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
 import { cn, getPriorityColor, getStatusColor, formatDate, formatRelativeTime, getDisplayName, getInitial, isMemberRole } from "@/lib/utils";
 import { toast } from "sonner";
-import api from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { sendPushToUsers } from "@/lib/pushNotifications";
+import { uploadAttachments } from "@/lib/uploadAttachments";
 
 export default function TaskDetailPage() {
   const params = useParams();
@@ -130,24 +130,22 @@ export default function TaskDetailPage() {
     if (!files || files.length === 0) return;
 
     setCompletionUploading(true);
-    const uploadedFiles = [...completionAttachments];
     try {
-      for (let i = 0; i < files.length; i += 1) {
-        const formData = new FormData();
-        formData.append("file", files[i]);
-        const res = await api.post("/upload/single", formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        if (res.data?.success) {
-          uploadedFiles.push(res.data.data);
-        }
+      const result = await uploadAttachments(files);
+      if (result.uploaded.length > 0) {
+        setCompletionAttachments((prev) => [...prev, ...result.uploaded]);
       }
-      setCompletionAttachments(uploadedFiles);
-      toast.success("Completion files uploaded.");
-    } catch {
-      toast.error("Failed to upload completion files.");
+
+      if (result.uploaded.length > 0 && result.failed.length === 0) {
+        toast.success("Completion files uploaded.");
+      } else if (result.uploaded.length > 0 && result.failed.length > 0) {
+        toast.warning(`${result.uploaded.length} file(s) uploaded, ${result.failed.length} failed.`);
+      } else {
+        toast.error(result.failed[0]?.reason || "Failed to upload completion files.");
+      }
     } finally {
       setCompletionUploading(false);
+      if (completionFileInputRef.current) completionFileInputRef.current.value = "";
     }
   };
 

@@ -5,7 +5,7 @@ import { X, Plus, Calendar, User as UserIcon, Flag, Briefcase, Paperclip, CheckC
 import { useTaskStore } from "@/store/taskStore";
 import { useAdminStore } from "@/store/adminStore";
 import { toast } from "sonner";
-import api from "@/lib/api";
+import { uploadAttachments } from "@/lib/uploadAttachments";
 import "./CreateTaskModal.css";
 
 interface Props { onClose: () => void; }
@@ -93,27 +93,23 @@ export default function CreateTaskModal({ onClose }: Props) {
     if (!files || files.length === 0) return;
 
     setUploading(true);
-    const uploadedFiles = [...attachments];
 
     try {
-      for (let i = 0; i < files.length; i++) {
-        const fileData = new FormData();
-        fileData.append('file', files[i]);
-        
-        const res = await api.post('/upload/single', fileData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        });
-        
-        if (res.data.success) {
-          uploadedFiles.push(res.data.data);
-        }
+      const result = await uploadAttachments(files);
+      if (result.uploaded.length > 0) {
+        setAttachments((prev) => [...prev, ...result.uploaded]);
       }
-      setAttachments(uploadedFiles);
-      toast.success("Attachments uploaded successfully.");
-    } catch (error) {
-      toast.error("Failed to upload attachments.");
+
+      if (result.uploaded.length > 0 && result.failed.length === 0) {
+        toast.success("Attachments uploaded successfully.");
+      } else if (result.uploaded.length > 0 && result.failed.length > 0) {
+        toast.warning(`${result.uploaded.length} file(s) uploaded, ${result.failed.length} failed.`);
+      } else {
+        toast.error(result.failed[0]?.reason || "Failed to upload attachments.");
+      }
     } finally {
       setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 

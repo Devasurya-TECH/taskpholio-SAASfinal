@@ -161,7 +161,12 @@ export default function DashboardPage() {
 
         <section className="content-grid-premium">
           <ActivityTable tasks={dashboardTasks} />
-          <ActionPanel completed={metrics.completed} inProgress={metrics.inProgress} pending={metrics.pending + metrics.blocked} />
+          <ActionPanel
+            completed={metrics.completed}
+            inProgress={metrics.inProgress}
+            pending={metrics.pending + metrics.blocked}
+            showTeamWorkspace={isAdmin(user?.role || "")}
+          />
         </section>
       </div>
 

@@ -7,9 +7,10 @@ interface ActionPanelProps {
   completed: number;
   inProgress: number;
   pending: number;
+  showTeamWorkspace?: boolean;
 }
 
-export default function ActionPanel({ completed, inProgress, pending }: ActionPanelProps) {
+export default function ActionPanel({ completed, inProgress, pending, showTeamWorkspace = false }: ActionPanelProps) {
   return (
     <div className="premium-glass action-panel">
       <div className="panel-head">
@@ -29,9 +30,11 @@ export default function ActionPanel({ completed, inProgress, pending }: ActionPa
         <Link href="/dashboard/tasks" className="action-btn">
           Open Task Board <ArrowUpRight size={14} />
         </Link>
-        <Link href="/dashboard/teams" className="action-btn secondary">
-          Team Workspace <ShieldCheck size={14} />
-        </Link>
+        {showTeamWorkspace ? (
+          <Link href="/dashboard/teams" className="action-btn secondary">
+            Team Workspace <ShieldCheck size={14} />
+          </Link>
+        ) : null}
       </div>
 
       <div className="action-stats">
