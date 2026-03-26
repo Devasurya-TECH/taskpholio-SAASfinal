@@ -83,6 +83,28 @@ const progressFromStatus = (status: Task["status"]): number => {
   return 0;
 };
 
+const normalizeProgressValue = (
+  rawProgress: unknown,
+  status: Task["status"],
+  assignmentType: Task["assignmentType"]
+): number => {
+  const numericProgress =
+    typeof rawProgress === "number" && Number.isFinite(rawProgress)
+      ? Math.max(0, Math.min(100, Math.round(rawProgress)))
+      : null;
+
+  if (status === "completed") return 100;
+  if (status === "pending") return 0;
+
+  if (status === "in-progress") {
+    if (numericProgress === null) return 50;
+    if (assignmentType !== "team" && numericProgress === 0) return 50;
+    return numericProgress;
+  }
+
+  return numericProgress ?? progressFromStatus(status);
+};
+
 const statusLabel = (status: Task["status"]): string => {
   if (status === "in-progress") return "In Progress";
   if (status === "completed") return "Completed";
@@ -393,7 +415,7 @@ const hydrateTasks = async (rows: any[]): Promise<Task[]> => {
       teamProgress: normalizeTeamProgress(Array.isArray(row.team_progress) ? row.team_progress : []),
       tags: Array.isArray(row.tags) ? row.tags : [],
       isArchived: Boolean(row.is_archived),
-      progress: typeof row.progress === "number" ? row.progress : progressFromStatus(status),
+      progress: normalizeProgressValue(row.progress, status, assignmentType),
       completedAt: row.completed_at || undefined,
       createdAt: row.created_at || new Date().toISOString(),
       updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
@@ -665,7 +687,13 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     if (data.title !== undefined) updates.title = data.title;
     if (data.description !== undefined) updates.description = data.description;
     if (data.priority !== undefined) updates.priority = toDbPriority(data.priority);
-    if (data.status !== undefined) updates.status = toDbStatus(data.status);
+    if (data.status !== undefined) {
+      updates.status = toDbStatus(data.status);
+      if (data.status === "pending" || data.status === "in-progress" || data.status === "completed") {
+        updates.progress = progressFromStatus(data.status);
+        updates.completed_at = data.status === "completed" ? new Date().toISOString() : null;
+      }
+    }
     if ((data as any).dueDate !== undefined) updates.due_date = (data as any).dueDate || null;
     if ((data as any).assignedToId !== undefined) updates.assigned_to = (data as any).assignedToId || null;
     if ((data as any).teamId !== undefined) updates.assigned_team = (data as any).teamId || null;
@@ -763,17 +791,17 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       const nextTeamProgress = Array.from(progressMap.values());
       const totalMembers = nextTeamProgress.length || 1;
       const completedCount = nextTeamProgress.filter((entry) => entry.status === "completed").length;
-      const anyStarted = nextTeamProgress.some((entry) => entry.status === "pending" || entry.status === "in-progress" || entry.status === "completed");
-      const anyInProgress = nextTeamProgress.some((entry) => entry.status === "in-progress");
+      const inProgressCount = nextTeamProgress.filter((entry) => entry.status === "in-progress").length;
 
       let globalStatus: Task["status"] = "pending";
       if (completedCount === totalMembers) {
         globalStatus = "completed";
-      } else if (anyInProgress || (anyStarted && completedCount > 0)) {
+      } else if (inProgressCount > 0 || completedCount > 0) {
         globalStatus = "in-progress";
       }
 
-      const nextProgress = Math.round((completedCount / totalMembers) * 100);
+      const weightedProgress = completedCount * 100 + inProgressCount * 50;
+      const nextProgress = Math.round(weightedProgress / totalMembers);
       const nextActivity = [
         ...(task.activity || []),
         {
@@ -835,6 +863,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
         .from("tasks")
         .update({
           status: toDbStatus(nextStatus),
+          progress: progressFromStatus(nextStatus),
           completed_at: nextStatus === "completed" ? new Date().toISOString() : null,
         })
         .eq("id", id)
