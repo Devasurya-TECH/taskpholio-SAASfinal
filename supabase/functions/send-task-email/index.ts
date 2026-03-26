@@ -78,7 +78,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
-    const emailFrom = Deno.env.get("EMAIL_FROM") ?? "";
+    const emailFrom = Deno.env.get("EMAIL_FROM") ?? "Taskpholio <onboarding@resend.dev>";
     const appBaseUrl = Deno.env.get("APP_BASE_URL") ?? "https://admin.labsrebound.com";
 
     if (!supabaseUrl || !serviceKey) {
@@ -116,14 +116,14 @@ serve(async (req) => {
       });
     }
 
-    if (!resendApiKey || !emailFrom) {
+    if (!resendApiKey) {
       return new Response(
         JSON.stringify({
-          success: true,
+          success: false,
           sent: 0,
-          failed: 0,
+          failed: userIds.length,
           skipped: userIds.length,
-          reason: "Missing RESEND_API_KEY or EMAIL_FROM",
+          reason: "Missing RESEND_API_KEY",
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -165,6 +165,7 @@ serve(async (req) => {
 
     let sent = 0;
     let failed = 0;
+    const failedReasons: string[] = [];
 
     for (const recipient of validRecipients) {
       try {
@@ -194,18 +195,25 @@ serve(async (req) => {
         });
 
         if (!resendResponse.ok) {
+          const errorText = await resendResponse.text();
+          const reason = `Failed for ${recipient.email}: ${resendResponse.status} ${errorText}`;
+          console.error(reason);
+          failedReasons.push(reason);
           failed += 1;
           continue;
         }
         sent += 1;
       } catch {
+        const reason = `Failed for ${recipient.email}: exception while calling Resend`;
+        console.error(reason);
+        failedReasons.push(reason);
         failed += 1;
       }
     }
 
     const skipped = Math.max(0, userIds.length - validRecipients.length);
 
-    return new Response(JSON.stringify({ success: true, sent, failed, skipped }), {
+    return new Response(JSON.stringify({ success: true, sent, failed, skipped, failedReasons }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

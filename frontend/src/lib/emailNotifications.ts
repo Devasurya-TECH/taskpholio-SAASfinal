@@ -80,7 +80,12 @@ export async function sendTaskAssignmentEmails(payload: TaskAssignmentEmailPaylo
     }
 
     if (data?.success === false) {
-      console.error("Email function rejected request:", data?.error || "Unknown send-task-email error");
+      console.error("Email function rejected request:", data?.error || data?.reason || "Unknown send-task-email error");
+      return;
+    }
+
+    if (Array.isArray(data?.failedReasons) && data.failedReasons.length > 0) {
+      console.error("Task email delivery failures:", data.failedReasons);
     }
   } catch (error) {
     console.error("Email invoke crashed:", error);
