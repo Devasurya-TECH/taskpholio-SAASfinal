@@ -91,7 +91,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
-    const emailFrom = Deno.env.get("EMAIL_FROM") ?? "Taskpholio <onboarding@resend.dev>";
+    const emailFrom = Deno.env.get("EMAIL_FROM") ?? "LabsRebound <noreply@admin.labsrebound.com>";
     const appBaseUrl = Deno.env.get("APP_BASE_URL") ?? "https://admin.labsrebound.com";
 
     if (!supabaseUrl || !serviceKey) {
