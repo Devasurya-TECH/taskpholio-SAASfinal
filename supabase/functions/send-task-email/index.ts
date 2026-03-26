@@ -89,22 +89,26 @@ serve(async (req) => {
     }
 
     const admin = createClient(supabaseUrl, serviceKey);
-
+    let fallbackAssignerName = "Leadership";
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ success: false, error: "Missing Authorization header." }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const token = authHeader.replace("Bearer ", "");
-    const { data: authData, error: authError } = await admin.auth.getUser(token);
-    if (authError || !authData?.user) {
-      return new Response(JSON.stringify({ success: false, error: "Authentication failed." }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const token =
+      authHeader && authHeader.toLowerCase().startsWith("bearer ")
+        ? authHeader.slice(7).trim()
+        : "";
+    if (token) {
+      const { data: authData } = await admin.auth.getUser(token);
+      const actorId = authData?.user?.id;
+      if (actorId) {
+        const { data: actorProfile } = await admin
+          .from("profiles")
+          .select("full_name, email")
+          .eq("id", actorId)
+          .maybeSingle();
+        fallbackAssignerName =
+          actorProfile?.full_name ||
+          actorProfile?.email ||
+          fallbackAssignerName;
+      }
     }
 
     const payload = (await req.json()) as TaskEmailRequest;
@@ -151,7 +155,7 @@ serve(async (req) => {
 
     const taskTitle = payload.taskTitle || "Task";
     const taskDescription = payload.taskDescription || "";
-    const assignerName = payload.assignerName || "Leadership";
+    const assignerName = payload.assignerName || fallbackAssignerName;
     const teamName = payload.teamName || "";
     const dueDate = formatDueDate(payload.dueDate);
     const taskUrl = payload.taskId
