@@ -43,7 +43,23 @@ export default function MeetingsPage() {
           .order("scheduled_at", { ascending: true });
         if (error) throw error;
 
-        const mapped: UiMeeting[] = (data || []).map((meeting: any) => {
+        const now = Date.now();
+        const upcomingRows = (data || []).filter((meeting: any) => {
+          const scheduledAt = new Date(meeting.scheduled_at).getTime();
+          return Number.isFinite(scheduledAt) && scheduledAt >= now;
+        });
+        const completedIds = (data || [])
+          .filter((meeting: any) => {
+            const scheduledAt = new Date(meeting.scheduled_at).getTime();
+            return Number.isFinite(scheduledAt) && scheduledAt < now;
+          })
+          .map((meeting: any) => meeting.id);
+
+        if (completedIds.length > 0) {
+          await supabase.from("meetings").delete().in("id", completedIds);
+        }
+
+        const mapped: UiMeeting[] = upcomingRows.map((meeting: any) => {
           const start = new Date(meeting.scheduled_at);
           const end = new Date(start.getTime() + 60 * 60 * 1000);
           return {
@@ -54,7 +70,7 @@ export default function MeetingsPage() {
             endTime: end.toISOString(),
             location: "Virtual HQ",
             meetingLink: meeting.link || undefined,
-            status: start.getTime() >= Date.now() ? "scheduled" : "completed",
+            status: "scheduled",
             attendeesCount: Array.isArray(meeting.attendees) ? meeting.attendees.length : 0,
           };
         });
@@ -73,6 +89,11 @@ export default function MeetingsPage() {
   const scheduleMeeting = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!form.title || !form.startTime) return;
+    const normalizedScheduledAt = new Date(form.startTime).toISOString();
+    if (new Date(normalizedScheduledAt).getTime() <= Date.now()) {
+      toast.error("Please schedule meetings for a future date and time.");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -81,7 +102,7 @@ export default function MeetingsPage() {
         .insert({
           title: form.title,
           description: form.description || "",
-          scheduled_at: form.startTime,
+          scheduled_at: normalizedScheduledAt,
           link: form.meetingLink || null,
         })
         .select("*")
@@ -123,7 +144,7 @@ export default function MeetingsPage() {
           endTime: end.toISOString(),
           location: "Virtual HQ",
           meetingLink: data.link || undefined,
-          status: start.getTime() >= Date.now() ? "scheduled" : "completed",
+          status: "scheduled",
           attendeesCount: 0,
         }].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
       );
@@ -138,7 +159,7 @@ export default function MeetingsPage() {
           meetingId: data.id,
           meetingTitle: data.title,
           meetingDescription: data.description || "",
-          scheduledAt: data.scheduled_at,
+          scheduledAt: normalizedScheduledAt,
           meetingLink: data.link || "",
           organizerName,
           location: "Virtual HQ",
