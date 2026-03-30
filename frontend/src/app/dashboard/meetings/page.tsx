@@ -5,6 +5,7 @@ import { addMonths, eachDayOfInterval, endOfMonth, format, isSameDay, parseISO, 
 import { CalendarPlus, ChevronLeft, ChevronRight, Clock, MapPin, Users, Video } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
+import { sendMeetingScheduledEmails } from "@/lib/emailNotifications";
 import { toast } from "sonner";
 
 type UiMeeting = {
@@ -87,6 +88,30 @@ export default function MeetingsPage() {
         .single();
       if (error) throw error;
 
+      let allRecipients: Array<{ id: string; full_name?: string | null; email?: string | null }> = [];
+      let organizerName = "Leadership";
+      try {
+        const [{ data: authData }, { data: profilesData, error: profilesError }] = await Promise.all([
+          supabase.auth.getUser(),
+          supabase
+            .from("profiles")
+            .select("id, full_name, email")
+            .eq("is_active", true),
+        ]);
+
+        if (profilesError) throw profilesError;
+
+        allRecipients = (profilesData || []) as Array<{ id: string; full_name?: string | null; email?: string | null }>;
+
+        const organizerId = authData?.user?.id || "";
+        if (organizerId) {
+          const matchedOrganizer = allRecipients.find((profile) => profile.id === organizerId);
+          organizerName = matchedOrganizer?.full_name || matchedOrganizer?.email || authData?.user?.email || organizerName;
+        }
+      } catch (notifyContextError) {
+        console.error("Unable to build meeting email recipient context:", notifyContextError);
+      }
+
       const start = new Date(data.scheduled_at);
       const end = form.endTime ? new Date(form.endTime) : new Date(start.getTime() + 60 * 60 * 1000);
       setMeetings((prev) =>
@@ -102,6 +127,23 @@ export default function MeetingsPage() {
           attendeesCount: 0,
         }].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
       );
+
+      const recipientIds = Array.from(
+        new Set(allRecipients.map((recipient) => recipient.id).filter(Boolean))
+      );
+
+      if (recipientIds.length > 0) {
+        await sendMeetingScheduledEmails({
+          userIds: recipientIds,
+          meetingId: data.id,
+          meetingTitle: data.title,
+          meetingDescription: data.description || "",
+          scheduledAt: data.scheduled_at,
+          meetingLink: data.link || "",
+          organizerName,
+          location: "Virtual HQ",
+        });
+      }
 
       setShowForm(false);
       setForm({ title: "", description: "", startTime: "", endTime: "", meetingLink: "" });

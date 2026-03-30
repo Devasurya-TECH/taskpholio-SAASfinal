@@ -43,6 +43,8 @@ const taskProgress = (task: Task) => {
   return 0;
 };
 
+const summarizeDescription = (description?: string) => (description || "").replace(/\s+/g, " ").trim();
+
 type PriorityFilter = "all" | "critical" | "high" | "medium" | "low";
 
 export default function TasksPage() {
@@ -114,14 +116,15 @@ export default function TasksPage() {
           {task.visibility === "all" ? "Public" : task.visibility === "team" ? "Team" : "Private"}
         </span>
       </div>
-      {task.description && <p className="saas-task-desc">{task.description}</p>}
+
+      {task.description && <p className="saas-task-desc">{summarizeDescription(task.description)}</p>}
 
       <div className="saas-task-meta">
-        <div style={{ display: "inline-flex", alignItems: "center", gap: "0.32rem" }}>
+        <div className="saas-task-meta-owner">
           <span className="saas-user-dot">{getInitial(task.assignedTo?.name, task.assignedTo?.email)}</span>
           <span>{getDisplayName(task.assignedTo?.name, task.assignedTo?.email)}</span>
         </div>
-        <span>{task.dueDate ? formatDate(task.dueDate) : "No deadline"}</span>
+        <span className="saas-task-due-date">{task.dueDate ? formatDate(task.dueDate) : "No deadline"}</span>
       </div>
 
       <div className="saas-pill-row" style={{ marginTop: "0.34rem" }}>
