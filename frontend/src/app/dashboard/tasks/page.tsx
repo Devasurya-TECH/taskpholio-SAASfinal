@@ -7,7 +7,8 @@ import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
 import { Task } from "@/lib/types";
 import { formatDate, getDisplayName, getInitial, normalizeUserRole } from "@/lib/utils";
-import { taskDescriptionParagraphs, taskDescriptionPreview, taskDescriptionToLines } from "@/lib/taskDescription";
+import { taskDescriptionPreview } from "@/lib/taskDescription";
+import TaskBriefingView from "@/components/tasks/TaskBriefingView";
 import CreateTaskModal from "@/components/tasks/CreateTaskModal";
 
 const statusLabel = (status: Task["status"]) => {
@@ -251,32 +252,7 @@ export default function TasksPage() {
             </div>
 
             <div className="saas-task-preview-body">
-              {(() => {
-                const lines = taskDescriptionToLines(previewTask.description);
-                const isListView = lines.some((line) => line.startsWith("•") || line.startsWith("-"));
-                if (isListView) {
-                  return (
-                    <ul className="saas-task-preview-list">
-                      {lines.map((line, index) => (
-                        <li key={`${previewTask._id}-line-${index}`} className="saas-task-preview-paragraph">
-                          {line.replace(/^[•-]\s*/, "")}
-                        </li>
-                      ))}
-                    </ul>
-                  );
-                }
-
-                const paragraphs = taskDescriptionParagraphs(previewTask.description, 2);
-                return paragraphs.length ? (
-                  paragraphs.map((paragraph, index) => (
-                    <p key={`${previewTask._id}-paragraph-${index}`} className="saas-task-preview-paragraph">
-                      {paragraph}
-                    </p>
-                  ))
-                ) : (
-                  <p className="saas-task-preview-empty">No task description provided.</p>
-                );
-              })()}
+              <TaskBriefingView description={previewTask.description} />
             </div>
 
             <footer className="saas-task-preview-footer">
